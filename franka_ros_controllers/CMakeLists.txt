@@ -23,6 +23,12 @@ find_package(catkin REQUIRED COMPONENTS
 find_package(Eigen3 REQUIRED)
 find_package(Franka 0.5.0 REQUIRED)
 
+add_message_files(FILES
+  JointTorqueComparison.msg
+)
+
+generate_messages()
+
 generate_dynamic_reconfigure_options(
   cfg/joint_controller_params.cfg
   cfg/compliance_param.cfg
@@ -53,8 +59,10 @@ add_library(franka_ros_controllers
   src/effort_joint_position_controller.cpp
   src/effort_joint_torque_controller.cpp
   src/velocity_joint_velocity_controller.cpp
-  src/force_example_controller.cpp
+  src/force_controller.cpp
+  src/ntorque_controller.cpp
   src/cartesian_impedance_controller.cpp
+  src/joint_impedance_controller.cpp
 )
 
 add_dependencies(franka_ros_controllers
