@@ -750,7 +750,8 @@ _ns
             test=lambda: test_collision() or \
                          (callable(test) and test() == True) or \
                          (all(diff() < threshold for diff in diffs)),
-            timeout=timeout,
+            #timeout=timeout,
+            timeout=max(time_so_far, timeout) #XXX
             timeout_msg=fail_msg,
             rate=100,
             raise_on_error=False
