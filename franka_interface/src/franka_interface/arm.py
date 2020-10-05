@@ -766,6 +766,7 @@ _ns
         move is considered successful [0.008726646]
         @param test: optional function returning True if motion must be aborted
         """
+        print('mtt ', self.endpoint_pose(), self.joint_angles())
         if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller: 
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
         
@@ -789,7 +790,7 @@ _ns
             test=lambda: self.has_collided() or \
                          (all(diff() < threshold for diff in diffs)),
             timeout=timeout,
-            timeout_msg="Collision Detected!",
+            timeout_msg="Move to touch complete.",
             rate=100,
             raise_on_error=False
             )
@@ -798,11 +799,14 @@ _ns
 
         if not self.has_collided():
             rospy.logerr('Move To Touch did not end in making contact') 
+        else:
+            rospy.loginfo('Collision detected!')
 
         # The collision, though desirable, triggers a cartesian reflex error. We need to reset that error
         if self._robot_mode == 4:
             self.resetErrors()
 
+        print('mtt ', self.endpoint_pose(), self.joint_angles())
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
     def resetErrors(self):
@@ -863,6 +867,10 @@ _ns
         if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
             self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
 
+        print(self.joint_angles()) 
+        print(self.endpoint_pose())
+        print(pose)
+        #raw_input("GO?")
         if stiffness is not None:
             stiffness_gains = CartImpedanceStiffness()
             stiffness_gains.x = stiffness[0]
@@ -911,7 +919,7 @@ _ns
 
     def execute_cart_impedance_traj(self, poses, stiffness=None, timing=None):
         if timing is None:
-            timing = [0.5]*len(poses)
+            timing = [0.75]*len(poses)
         elif isinstance(timing, int) or isinstance(timing, float):
             timing = [timing]*len(poses)
         elif isinstance(timing, list) and len(timing) != len(poses):
@@ -925,6 +933,7 @@ _ns
         for i in xrange(len(poses)):
             self.set_cart_impedance_pose(poses[i], stiffness)
             rospy.sleep(timing[i])
+            if i == 0: self.resetErrors()
 
         rospy.sleep(0.5)
 
