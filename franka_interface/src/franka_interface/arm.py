@@ -766,7 +766,6 @@ _ns
         move is considered successful [0.008726646]
         @param test: optional function returning True if motion must be aborted
         """
-        print('mtt ', self.endpoint_pose(), self.joint_angles())
         if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller: 
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
         
@@ -806,7 +805,6 @@ _ns
         if self._robot_mode == 4:
             self.resetErrors()
 
-        print('mtt ', self.endpoint_pose(), self.joint_angles())
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
     def resetErrors(self):
@@ -867,10 +865,6 @@ _ns
         if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
             self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
 
-        print(self.joint_angles()) 
-        print(self.endpoint_pose())
-        print(pose)
-        #raw_input("GO?")
         if stiffness is not None:
             stiffness_gains = CartImpedanceStiffness()
             stiffness_gains.x = stiffness[0]
@@ -891,6 +885,12 @@ _ns
         marker_pose.pose.orientation.w = pose['orientation'].w
         self._cartesian_impedance_pose_publisher.publish(marker_pose)
 
+        # Do not return until motion complete
+        rospy.sleep(0.1)
+        while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
+            rospy.sleep(0.1)
+
+
     def set_joint_impedance_config(self, q, stiffness=None):
         #Need q converted to list
         if self._ctrl_manager.current_controller != self._ctrl_manager.joint_impedance_controller: 
@@ -905,6 +905,11 @@ _ns
         marker_pose.position = q
         marker_pose.velocity = [0.005]*7
         self._joint_impedance_publisher.publish(marker_pose)
+
+        # Do not return until motion complete
+        rospy.sleep(0.1)
+        while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
+            rospy.sleep(0.1)
    
     def set_torque(self, tau):
         raise NotImplementedError("Still working on the bugs in this!")
@@ -917,25 +922,21 @@ _ns
         torque.torque = tau
         self._torque_controller_publisher.publish(torque)
 
-    def execute_cart_impedance_traj(self, poses, stiffness=None, timing=None):
-        if timing is None:
-            timing = [0.75]*len(poses)
-        elif isinstance(timing, int) or isinstance(timing, float):
-            timing = [timing]*len(poses)
-        elif isinstance(timing, list) and len(timing) != len(poses):
-            raise IOError("Timing is not of correct length")
-        else:
-            raise IOError("Type {} is allowed for timing".format(type(timing)))
-
+    def execute_cart_impedance_traj(self, poses, stiffness=None):
         if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
             self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
 
         for i in xrange(len(poses)):
             self.set_cart_impedance_pose(poses[i], stiffness)
-            rospy.sleep(timing[i])
             if i == 0: self.resetErrors()
 
-        rospy.sleep(0.5)
+    def execute_joint_impedance_traj(self, qs, stiffness=None):
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_impedance_controller:
+            self.switchToController(self._ctrl_manager.joint_impedance_controller)
+
+        for i in xrange(len(qs)):
+            self.set_joint_impedance_config(qs[i], stiffness)
+            if i == 0: self.resetErrors()
 
     def exert_force(self, target_wrench):
         if self._ctrl_manager.current_controller != self._ctrl_manager.force_controller: 
