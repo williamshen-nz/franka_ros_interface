@@ -867,9 +867,9 @@ _ns
         if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
             self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
 
-        print(self.joint_angles()) 
-        print(self.endpoint_pose())
-        print(pose)
+        # print(self.joint_angles()) 
+        # print(self.endpoint_pose())
+        # print(pose)
         #raw_input("GO?")
         if stiffness is not None:
             stiffness_gains = CartImpedanceStiffness()

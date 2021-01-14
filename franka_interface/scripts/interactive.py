@@ -23,6 +23,15 @@ def effort_dict_to_list(effort_dict):
 if __name__ == '__main__':
     rospy.init_node("path_testing")
     arm = ArmInterface()
-    rospy.sleep(0.5)    
+    rospy.sleep(0.5) 
+
+    # pose = arm.joint_angles()
+    # print(pose)
+    # pose2 = copy.deepcopy(pose)
+    # pose2['panda_joint1'] += 0.2
+    # print(pose2)
+    # arm.move_to_joint_positions(pose2)   
+    # # rospy.sleep(0.5) 
+
 
     IPython.embed()
