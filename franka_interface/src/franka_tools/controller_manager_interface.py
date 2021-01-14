@@ -478,10 +478,10 @@ class FrankaControllerManagerInterface(object):
     def joint_position_controller(self):
         return self._ns[1:] + "/position_joint_position_controller"
     @property
-    def joint_torque_controller(self):
+    def effort_joint_torque_controller(self):
         return self._ns[1:] + "/effort_joint_torque_controller"    
     @property
-    def joint_impedance_controller(self):
+    def effort_joint_impedance_controller(self):
         return self._ns[1:] + "/effort_joint_impedance_controller"   
     @property
     def effort_joint_position_controller(self):

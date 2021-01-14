@@ -645,8 +645,7 @@ _ns
         move is considered successful [0.008726646]
         @param test: optional function returning True if motion must be aborted
         """
-        switch_ctrl = True if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller else False
-        if switch_ctrl:
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller:  
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
         
         min_traj_dur = 0.5
@@ -682,14 +681,6 @@ _ns
             )
 
         rospy.sleep(0.5)
-
-        if switch_ctrl:
-            self._ctrl_manager.stop_controller(self._ctrl_manager.joint_trajectory_controller)
-            for ctrlr in self._ctrl_manager.list_active_controllers(only_motion_controllers = True):
-                self._ctrl_manager.start_controller(ctrlr.name)
-                rospy.loginfo("ArmInterface: Restaring %s"%ctrlr.name)
-                rospy.sleep(0.5)
-
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
     def execute_position_path(self, position_path, timeout=15.0,
@@ -714,9 +705,7 @@ _ns
         if diff_from_start > 0.1:
             raise IOError("Robot not at start of trajectory")
 
-        switch_ctrl = True if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller else False
-
-        if switch_ctrl:
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller: 
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
         
         min_traj_dur = 0.5
@@ -758,14 +747,6 @@ _ns
             )
 
         rospy.sleep(0.5)
-
-        if switch_ctrl:
-            self._ctrl_manager.stop_controller(self._ctrl_manager.joint_trajectory_controller)
-            for ctrlr in self._ctrl_manager.list_active_controllers(only_motion_controllers = True):
-                self._ctrl_manager.start_controller(ctrlr.name)
-                rospy.loginfo("ArmInterface: Restaring %s"%ctrlr.name)
-                rospy.sleep(0.5)
-
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
     def move_to_touch(self, positions, timeout=10.0, threshold=0.00085):
@@ -785,8 +766,7 @@ _ns
         move is considered successful [0.008726646]
         @param test: optional function returning True if motion must be aborted
         """
-        switch_ctrl = True if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller else False
-        if switch_ctrl:
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller: 
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
         
         min_traj_dur = 0.5
@@ -809,7 +789,7 @@ _ns
             test=lambda: self.has_collided() or \
                          (all(diff() < threshold for diff in diffs)),
             timeout=timeout,
-            timeout_msg="Collision Detected!",
+            timeout_msg="Move to touch complete.",
             rate=100,
             raise_on_error=False
             )
@@ -818,13 +798,8 @@ _ns
 
         if not self.has_collided():
             rospy.logerr('Move To Touch did not end in making contact') 
-
-        if switch_ctrl:
-            self._ctrl_manager.stop_controller(self._ctrl_manager.joint_trajectory_controller)
-            for ctrlr in self._ctrl_manager.list_active_controllers(only_motion_controllers = True):
-                self._ctrl_manager.start_controller(ctrlr.name)
-                rospy.loginfo("ArmInterface: Restaring %s"%ctrlr.name)
-                rospy.sleep(0.5)
+        else:
+            rospy.loginfo('Collision detected!')
 
         # The collision, though desirable, triggers a cartesian reflex error. We need to reset that error
         if self._robot_mode == 4:
@@ -838,8 +813,6 @@ _ns
         rospy.sleep(0.5)
         pub.publish(franka_control.msg.ErrorRecoveryActionGoal())
         rospy.loginfo("Collision Reflex was reset")
-
-
 
     def move_from_touch(self, positions, timeout=10.0, threshold=0.00085):
         """
@@ -859,8 +832,7 @@ _ns
         @param test: optional function returning True if motion must be aborted
         """
 
-        switch_ctrl = True if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller else False
-        if switch_ctrl:
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller: 
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
         
         min_traj_dur = 0.5
@@ -887,19 +859,10 @@ _ns
             )
 
         rospy.sleep(0.5)
-
-        if switch_ctrl:
-            self._ctrl_manager.stop_controller(self._ctrl_manager.joint_trajectory_controller)
-            for ctrlr in active_controllers:
-                self._ctrl_manager.start_controller(ctrlr.name)
-                rospy.loginfo("ArmInterface: Restaring %s"%ctrlr.name)
-                rospy.sleep(0.5)
-
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
     def set_cart_impedance_pose(self, pose, stiffness=None):
-        switch_ctrl = True if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller else False
-        if switch_ctrl:
+        if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
             self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
 
         if stiffness is not None:
@@ -921,11 +884,16 @@ _ns
         marker_pose.pose.orientation.z = pose['orientation'].z
         marker_pose.pose.orientation.w = pose['orientation'].w
         self._cartesian_impedance_pose_publisher.publish(marker_pose)
-    
+
+        # Do not return until motion complete
+        rospy.sleep(0.1)
+        while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
+            rospy.sleep(0.1)
+
+
     def set_joint_impedance_config(self, q, stiffness=None):
         #Need q converted to list
-        switch_ctrl = True if self._ctrl_manager.current_controller != self._ctrl_manager.joint_impedance_controller else False
-        if switch_ctrl:
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_impedance_controller: 
             self.switchToController(self._ctrl_manager.joint_impedance_controller)
 
         if stiffness is not None:
@@ -937,6 +905,11 @@ _ns
         marker_pose.position = q
         marker_pose.velocity = [0.005]*7
         self._joint_impedance_publisher.publish(marker_pose)
+
+        # Do not return until motion complete
+        rospy.sleep(0.1)
+        while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
+            rospy.sleep(0.1)
    
     def set_torque(self, tau):
         raise NotImplementedError("Still working on the bugs in this!")
@@ -949,23 +922,24 @@ _ns
         torque.torque = tau
         self._torque_controller_publisher.publish(torque)
 
-    def execute_cart_impedance_traj(self, poses, stiffness=None, timing=None):
-        if timing is None:
-            timing = [0.5]*len(poses)
-        elif isinstance(timing, int) or isinstance(timing, float):
-            timing = [timing]*len(poses)
-        elif isinstance(timing, list) and len(timing) != len(poses):
-            raise IOError("Timing is not of correct length")
-        else:
-            raise IOError("Type {} is allowed for timing".format(type(timing)))
+    def execute_cart_impedance_traj(self, poses, stiffness=None):
+        if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
+            self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
 
         for i in xrange(len(poses)):
             self.set_cart_impedance_pose(poses[i], stiffness)
-            rospy.sleep(timing[i])
+            if i == 0: self.resetErrors()
+
+    def execute_joint_impedance_traj(self, qs, stiffness=None):
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_impedance_controller:
+            self.switchToController(self._ctrl_manager.joint_impedance_controller)
+
+        for i in xrange(len(qs)):
+            self.set_joint_impedance_config(qs[i], stiffness)
+            if i == 0: self.resetErrors()
 
     def exert_force(self, target_wrench):
-        switch_ctrl = True if self._ctrl_manager.current_controller != self._ctrl_manager.force_controller else False
-        if switch_ctrl:
+        if self._ctrl_manager.current_controller != self._ctrl_manager.force_controller: 
             self.switchToController(self._ctrl_manager.force_controller)
 
         wrench = Wrench()
