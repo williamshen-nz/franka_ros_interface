@@ -43,7 +43,9 @@ catkin_generated
 devel
 
 cpp
-docs
+docs_src
+doc_src
+docs_build
 msg_gen
 srv_gen
 *.smoketest
