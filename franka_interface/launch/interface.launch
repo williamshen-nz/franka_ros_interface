@@ -6,18 +6,18 @@
   <arg name="start_controllers" default="true" />
 
   <!-- Panda Control Interface -->
-  <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find franka_panda_description)/robots/panda_arm_hand.urdf.xacro'" if="$(arg load_gripper)" />
-  <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find franka_panda_description)/robots/panda_arm.urdf.xacro'" unless="$(arg load_gripper)" />
+  <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find franka_description)/robots/panda_arm_hand.urdf.xacro'" if="$(arg load_gripper)" />
+  <param name="robot_description" command="$(find xacro)/xacro --inorder '$(find franka_description)/robots/panda_arm.urdf.xacro'" unless="$(arg load_gripper)" />
 
   <include file="$(find franka_gripper)/launch/franka_gripper.launch" if="$(arg load_gripper)">
-    <arg name="robot_ip" value="$(env FRANKA_ROBOT_IP)" />
+    <arg name="robot_ip" value="172.16.0.2" />
   </include>
 
   <!-- Start the custom_franka_control_node for advertising controller services and starting custom controller manager-->
   <rosparam command="load" file="$(find franka_interface)/config/robot_config.yaml"/>
   <node name="franka_control" pkg="franka_interface" type="custom_franka_control_node" output="screen" required="true" >
     <!-- <rosparam command="load" file="$(find franka_control)/config/custom_franka_control_node.yaml" /> -->
-    <param name="robot_ip" value="$(env FRANKA_ROBOT_IP)" />
+    <param name="robot_ip" value="172.16.0.2" />
     <param name="publish_frequency" value="$(arg rate)"/>
   </node>
 

@@ -44,11 +44,12 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
 from geometry_msgs.msg import PoseStamped, Wrench
 
+import franka_interface
 import franka_control
 import franka_dataflow
 from robot_params import RobotParams
 
-from franka_tools import FrankaFramesInterface, FrankaControllerManagerInterface, JointTrajectoryActionClient
+from franka_tools import FrankaFramesInterface, FrankaControllerManagerInterface, JointTrajectoryActionClient, CollisionBehaviourInterface
 
 
 class TipState():
@@ -706,19 +707,14 @@ class ArmInterface(object):
 
         if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller:  
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
-        ###curr_controller = self._ctrl_manager.set_motion_controller(self._ctrl_manager.joint_trajectory_controller)
        
-
- 
         min_traj_dur = 0.5
-        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names()) ###, ns = self._ns)
+        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
         traj_client.clear()
 
         dur = []
         for j in range(len(self._joint_names)):
             dur.append(max(abs(positions[self._joint_names[j]] - self._joint_angle[self._joint_names[j]]) / self._joint_limits.velocity[j], min_traj_dur))
-        ###traj_client.add_point(positions = [self._joint_angle[n] for n in self._joint_names], time = 0.0001)
-
         traj_client.add_point(positions = [positions[n] for n in self._joint_names], time = max(dur)/self._speed_ratio)
 
         diffs = [self.genf(j, a) for j, a in positions.items() if j in self._joint_angle]
@@ -742,13 +738,11 @@ class ArmInterface(object):
             rate=100,
             raise_on_error=False
             )
-        ###res = traj_client.result()
-        ###if res is not None and res.error_code:
-        ###    rospy.loginfo("Trajectory Server Message: {}".format(res))
-
+        res = traj_client.result()
+        if res is not None and res.error_code:
+            rospy.loginfo("Trajectory Server Message: {}".format(res))
 
         rospy.sleep(0.5)
-        ###self._ctrl_manager.set_motion_controller(curr_controller)
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
     def execute_position_path(self, position_path, timeout=15.0,
@@ -777,7 +771,7 @@ class ArmInterface(object):
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
         
         min_traj_dur = 0.5
-        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names(), ns = self._ns)
+        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
         traj_client.clear()
 
         time_so_far = 0
@@ -838,7 +832,7 @@ class ArmInterface(object):
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
         
         min_traj_dur = 0.5
-        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names(), ns = self._ns)
+        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
         traj_client.clear()
 
         speed_ratio = 0.05 # Move slower when approaching contact
@@ -904,7 +898,7 @@ class ArmInterface(object):
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
         
         min_traj_dur = 0.5
-        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names(), ns = self._ns)
+        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
         traj_client.clear()
 
         dur = []

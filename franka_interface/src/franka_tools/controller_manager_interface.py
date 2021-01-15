@@ -576,7 +576,7 @@ class FrankaControllerManagerInterface(object):
     def cartesian_impedance_controller(self):
         return self._ns[1:] + "/cartesian_impedance_controller"
 
-'''
+    '''
     @property
     def joint_torque_controller(self):
         """
@@ -610,8 +610,7 @@ class FrankaControllerManagerInterface(object):
         :type: str
         """
         return self._controller_names_from_rosparam['effort_joint_position_controller']
-'''
-
+    '''
     @property
     def joint_trajectory_controller(self):
         """
