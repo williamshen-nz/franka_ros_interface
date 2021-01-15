@@ -44,12 +44,12 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
 from geometry_msgs.msg import PoseStamped, Wrench
 
+import franka_interface
 import franka_control
 import franka_dataflow
-import franka_interface
 from robot_params import RobotParams
 
-from franka_tools import FrankaFramesInterface, FrankaControllerManagerInterface, JointTrajectoryActionClient
+from franka_tools import FrankaFramesInterface, FrankaControllerManagerInterface, JointTrajectoryActionClient, CollisionBehaviourInterface
 
 
 class TipState():
@@ -82,6 +82,20 @@ class ArmInterface(object):
 
     """ 
     Interface Class for an arm of Franka Panda robot
+    Constructor.
+    
+    :type synchronous_pub: bool
+    :param synchronous_pub: designates the JointCommand Publisher
+        as Synchronous if True and Asynchronous if False.
+
+        Synchronous Publishing means that all joint_commands publishing to
+        the robot's joints will block until the message has been serialized
+        into a buffer and that buffer has been written to the transport
+        of every current Subscriber. This yields predicable and consistent
+        timing of messages being delivered from this Publisher. However,
+        when using this mode, it is possible for a blocking Subscriber to
+        prevent the joint_command functions from exiting. Unless you need exact
+        JointCommand timing, default to Asynchronous Publishing (False).
     """
 
     # Containers
@@ -104,20 +118,6 @@ class ArmInterface(object):
 
     def __init__(self, synchronous_pub=False):
         """
-        Constructor.
-        
-        @type synchronous_pub: bool
-        @param synchronous_pub: designates the JointCommand Publisher
-            as Synchronous if True and Asynchronous if False.
-
-            Synchronous Publishing means that all joint_commands publishing to
-            the robot's joints will block until the message has been serialized
-            into a buffer and that buffer has been written to the transport
-            of every current Subscriber. This yields predicable and consistent
-            timing of messages being delivered from this Publisher. However,
-            when using this mode, it is possible for a blocking Subscriber to
-            prevent the joint_command functions from exiting. Unless you need exact
-            JointCommand timing, default to Asynchronous Publishing (False).
 
         """
         self.hand = franka_interface.GripperInterface()
@@ -158,7 +158,13 @@ class ArmInterface(object):
         self._neutral_pose_joints = self._params.get_neutral_pose()
 
         self._frames_interface = FrankaFramesInterface()
-        self._ctrl_manager = FrankaControllerManagerInterface(ns = self._ns, sim = True if self._params._in_sim else False)
+
+        try:
+            self._collision_behaviour_interface = CollisionBehaviourInterface()
+        except rospy.ROSException:
+            rospy.loginfo("Collision Service Not found. It will not be possible to change collision behaviour of robot!")
+            self._collision_behaviour_interface = None
+        self._ctrl_manager = FrankaControllerManagerInterface(ns = self._ns, sim = self._params._in_sim)
 
         self._speed_ratio = 0.15
 
@@ -259,18 +265,27 @@ class ArmInterface(object):
         self._joint_stiffness_publisher.unregister()
 
     def get_robot_params(self):
+        """
+        :return: Useful parameters from the ROS parameter server.
+        :rtype: franka_interface.RobotParams
+        """
         return self._params
 
     def get_joint_limits(self):
+        """
+        Return the joint limits (defined in the parameter server)
+
+        :rtype: franka_core_msgs.msg.JointLimits
+        :return: JointLimits
+        """
         return self._joint_limits
 
     def joint_names(self):
         """
         Return the names of the joints for the specified limb.
 
-        @rtype: [str]
-        @return: ordered list of joint names from proximal to distal
-        (i.e. shoulder to wrist).
+        :rtype: [str]
+        :return: ordered list of joint names from proximal to distal (i.e. shoulder to wrist).
         """
         return self._joint_names
 
@@ -288,7 +303,6 @@ class ArmInterface(object):
 
         self._robot_mode_ok = (self._robot_mode.value != self.RobotMode.ROBOT_MODE_REFLEX) and (self._robot_mode.value != self.RobotMode.ROBOT_MODE_USER_STOPPED)
 
-        jac = msg.O_Jac_EE
         self._jacobian = np.asarray(msg.O_Jac_EE).reshape(6,7,order = 'F')
 
         self._cartesian_velocity = {
@@ -303,23 +317,41 @@ class ArmInterface(object):
         if self._frames_interface:
             self._frames_interface._update_frame_data(msg.F_T_EE, msg.EE_T_K)
 
+        self._joint_inertia = np.asarray(msg.mass_matrix).reshape(7,7,order='F')
+
         self.q_d = msg.q_d
         self.dq_d = msg.dq_d
 
         self._gravity = np.asarray(msg.gravity)
+        self._coriolis = np.asarray(msg.coriolis)
 
         self._errors = message_converter.convert_ros_message_to_dictionary(msg.current_errors)
 
+    def coriolis_comp(self):
+        """
+        Return coriolis compensation torques. Useful for compensating coriolis when
+        performing direct torque control of the robot.
 
+        :rtype: np.ndarray
+        :return: 7D joint torques compensating for coriolis.
+        """
+        return self._coriolis
+        
     def gravity_comp(self):
+        """
+        Return gravity compensation torques.
+
+        :rtype: np.ndarray
+        :return: 7D joint torques compensating for gravity.
+        """
         return self._gravity
 
     def get_robot_status(self):
         """
         Return dict with all robot status information.
 
-        @rtype: dict
-        @return: ['robot_mode' (RobotMode object), 'robot_status' (bool), 'errors' (dict() of errors and their truth value), 'error_in_curr_status' (bool)]
+        :rtype: dict
+        :return: ['robot_mode' (RobotMode object), 'robot_status' (bool), 'errors' (dict() of errors and their truth value), 'error_in_curr_status' (bool)]
         """
         return {'robot_mode': self._robot_mode, 'robot_status': self._robot_mode_ok, 'errors': self._errors, 'error_in_current_state' : self.error_in_current_state()}
 
@@ -327,8 +359,8 @@ class ArmInterface(object):
         """
         Return True if the specified limb is in safe state (no collision, reflex, errors etc.).
 
-        @rtype: bool
-        @return: True if the arm is in safe state, False otherwise.
+        :rtype: bool
+        :return: True if the arm is in safe state, False otherwise.
         """
         return self._robot_mode_ok and not self.error_in_current_state()
 
@@ -336,8 +368,8 @@ class ArmInterface(object):
         """
         Return True if the specified limb has experienced an error.
 
-        @rtype: bool
-        @return: True if the arm has error, False otherwise.
+        :rtype: bool
+        :return: True if the arm has error, False otherwise.
         """
         return not all([e == False for e in self._errors.values()])
 
@@ -345,8 +377,8 @@ class ArmInterface(object):
         """
         Return list of error messages if there is error in robot state
 
-        @rtype: [str]
-        @return: list of names of current errors in robot state
+        :rtype: [str]
+        :return: list of names of current errors in robot state
         """
         return [e for e in self._errors if self._errors[e] == True] if self.error_in_current_state() else None
 
@@ -387,10 +419,10 @@ class ArmInterface(object):
         """
         Return the requested joint angle.
 
-        @type joint: str
-        @param joint: name of a joint
-        @rtype: float
-        @return: angle in radians of individual joint
+        :type joint: str
+        :param joint: name of a joint
+        :rtype: float
+        :return: angle in radians of individual joint
         """
         return self._joint_angle[joint]
 
@@ -398,8 +430,8 @@ class ArmInterface(object):
         """
         Return all joint angles.
 
-        @rtype: dict({str:float})
-        @return: unordered dict of joint name Keys to angle (rad) Values
+        :rtype: dict({str:float})
+        :return: unordered dict of joint name Keys to angle (rad) Values
         """
         return deepcopy(self._joint_angle)
 
@@ -407,9 +439,8 @@ class ArmInterface(object):
         """
         Return all joint angles.
 
-        @rtype: [double]
-        @return: joint angles (rad) orded by joint_names from proximal to distal
-        (i.e. shoulder to wrist).
+        :rtype: [float]
+        :return: joint angles (rad) orded by joint_names from proximal to distal (i.e. shoulder to wrist).
         """
         return [self._joint_angle[name] for name in self._joint_names]
 
@@ -417,10 +448,10 @@ class ArmInterface(object):
         """
         Return the requested joint velocity.
 
-        @type joint: str
-        @param joint: name of a joint
-        @rtype: float
-        @return: velocity in radians/s of individual joint
+        :type joint: str
+        :param joint: name of a joint
+        :rtype: float
+        :return: velocity in radians/s of individual joint
         """
         return self._joint_velocity[joint]
 
@@ -428,19 +459,19 @@ class ArmInterface(object):
         """
         Return all joint velocities.
 
-        @rtype: dict({str:float})
-        @return: unordered dict of joint name Keys to velocity (rad/s) Values
+        :rtype: dict({str:float})
+        :return: unordered dict of joint name Keys to velocity (rad/s) Values
         """
         return deepcopy(self._joint_velocity)
 
     def joint_effort(self, joint):
         """
         Return the requested joint effort.
-_ns
-        @type joint: str
-        @param joint: name of a joint
-        @rtype: float
-        @return: effort in Nm of individual joint
+
+        :type joint: str
+        :param joint: name of a joint
+        :rtype: float
+        :return: effort in Nm of individual joint
         """
         return self._joint_effort[joint]
 
@@ -448,8 +479,8 @@ _ns
         """
         Return all joint efforts.
 
-        @rtype: dict({str:float})
-        @return: unordered dict of joint name Keys to effort (Nm) Values
+        :rtype: dict({str:float})
+        :return: unordered dict of joint name Keys to effort (Nm) Values
         """
         return deepcopy(self._joint_effort)
 
@@ -457,10 +488,8 @@ _ns
         """
         Return Cartesian endpoint pose {position, orientation}.
 
-        @rtype: dict({str:L{Limb.Point},str:L{Limb.Quaternion}})
-        @return: position and orientation as named tuples in a dict
-
-        C{pose = {'position': (x, y, z), 'orientation': (x, y, z, w)}}
+        :rtype: dict({str:np.ndarray (shape:(3,)), str:quaternion.quaternion})
+        :return: position and orientation as named tuples in a dict
 
           - 'position': np.array of x, y, z
           - 'orientation': quaternion x,y,z,w in quaternion format
@@ -472,10 +501,8 @@ _ns
         """
         Return Cartesian endpoint twist {linear, angular}.
 
-        @rtype: dict({str:L{Limb.Point},str:L{Limb.Point}})
-        @return: linear and angular velocities as named tuples in a dict
-
-        C{twist = {'linear': (x, y, z), 'angular': (x, y, z)}}
+        :rtype: dict({str:np.ndarray (shape:(3,)),str:np.ndarray (shape:(3,))})
+        :return: linear and angular velocities as named tuples in a dict
 
           - 'linear': np.array of x, y, z
           - 'angular': np.array of x, y, z (angular velocity along the axes)
@@ -486,38 +513,65 @@ _ns
         """
         Return Cartesian endpoint wrench {force, torque}.
 
-        @rtype: dict({str:L{Limb.Point},str:L{Limb.Point}})
-        @return: force and torque at endpoint as named tuples in a dict
-
-        C{wrench = {'force': (x, y, z), 'torque': (x, y, z)}}
+        :rtype: dict({str:np.ndarray (shape:(3,)),str:np.ndarray (shape:(3,))})
+        :return: force and torque at endpoint as named tuples in a dict
 
           - 'force': Cartesian force on x,y,z axes in np.ndarray format
           - 'torque': Torque around x,y,z axes in np.ndarray format
         """
         return deepcopy(self._cartesian_effort)
 
+    def exit_control_mode(self, timeout=0.2):
+        """
+        Clean exit from advanced control modes (joint torque or velocity).
+        Resets control to joint position mode with current positions if the 
+        advanced control commands are not send within the specified timeout
+        interval.
+
+        :type timeout: float
+        :param timeout: control timeout in seconds [default: 0.2]
+        """
+        self.set_command_timeout(timeout)
+        self.set_joint_positions(self.joint_angles())
+
     def tip_states(self):
         """
         Return Cartesian endpoint state for a given tip name
 
-        @rtype: TipState object
-        @return: pose, velocity, effort, effort_in_K_frame
+        :rtype: TipState object
+        :return: pose, velocity, effort, effort_in_K_frame
         """
         return deepcopy(self._tip_states)
+        
+    def joint_inertia_matrix(self):
+        """
+        
+        :return: joint inertia matrix (7,7)
+        :rtype: np.ndarray [7x7]
+        """
+        return deepcopy(self._joint_inertia)
+
+    def zero_jacobian(self):
+        """
+        :return: end-effector jacobian (6,7)
+        :rtype: np.ndarray [6x7]
+        """
+        return deepcopy(self._jacobian)        
 
     def set_command_timeout(self, timeout):
         """
         Set the timeout in seconds for the joint controller
 
-        @type timeout: float
-        @param timeout: timeout in seconds
+        :type timeout: float
+        :param timeout: timeout in seconds
         """
         self._pub_joint_cmd_timeout.publish(Float64(timeout))
 
 
     def set_joint_position_speed(self, speed=0.3):
         """
-        Set ratio of max joint speed to use during joint position moves (only for move_to_joint_positions).
+        Set ratio of max joint speed to use during joint position 
+        moves (only for move_to_joint_positions).
 
         Set the proportion of maximum controllable velocity to use
         during joint position control execution. The default ratio
@@ -525,8 +579,8 @@ _ns
         Once set, a speed ratio will persist until a new execution
         speed is set.
 
-        @type speed: float
-        @param speed: ratio of maximum joint speed for execution
+        :type speed: float
+        :param speed: ratio of maximum joint speed for execution
                       default= 0.3; range= [0.0-1.0]
         """
         if speed > 0.3:
@@ -537,8 +591,8 @@ _ns
         """
         Commands the joints of this limb to the specified positions.
 
-        @type positions: [float]
-        @param positions: ordered joint angles (from joint1 to joint7) to be commanded
+        :type positions: dict({str:float}
+        :param positions: dict of {'joint_name':joint_position,}
         """
         self._command_msg.names = self._joint_names
         self._command_msg.position = [positions[j] for j in self._joint_names]
@@ -550,8 +604,8 @@ _ns
         """
         Commands the joints of this limb to the specified velocities.
 
-        @type velocities: dict({str:float})
-        @param velocities: joint_name:velocity command
+        :type velocities: dict({str:float})
+        :param velocities: dict of {'joint_name':joint_velocity,}
         """
         self._command_msg.names = self._joint_names
         self._command_msg.velocity = [velocities[j] for j in self._joint_names]
@@ -561,10 +615,10 @@ _ns
 
     def set_joint_torques(self, torques):
         """
-        Commands the joints of this limb to the specified torques.
+        Commands the joints of this limb with the specified torques.
 
-        @type torques: dict({str:float})
-        @param torques: joint_name:torque command
+        :type torques: dict({str:float})
+        :param torques: dict of {'joint_name':joint_torque,}
         """
         self._command_msg.names = self._joint_names
         self._command_msg.effort = [torques[j] for j in self._joint_names]
@@ -575,15 +629,15 @@ _ns
     def set_joint_positions_velocities(self, positions, velocities):
         """
         Commands the joints of this limb using specified positions and velocities using impedance control.
-        Command at time t is computed as 
-            u_t = coriolis_factor * coriolis_t + 
-                  K_p * (positions - curr_positions) + 
-                  K_d * (velocities - curr_velocities)
+        Command at time t is computed as:
 
-        @type positions: [float]
-        @param positions: desired joint positions as an ordered list corresponding to joints given by self.joint_names()
-        @type velocities: [float]
-        @param velocities: desired joint velocities as an ordered list corresponding to joints given by self.joint_names()
+        :math:`u_t= coriolis\_factor * coriolis\_t + K\_p * (positions - curr\_positions) +  K\_d * (velocities - curr\_velocities)`
+
+
+        :type positions: [float]
+        :param positions: desired joint positions as an ordered list corresponding to joints given by self.joint_names()
+        :type velocities: [float]
+        :param velocities: desired joint velocities as an ordered list corresponding to joints given by self.joint_names()
         """
         self._command_msg.names = self._joint_names
         self._command_msg.position = positions
@@ -594,6 +648,10 @@ _ns
 
 
     def has_collided(self):
+        """
+        Returns true if either joint collision or cartesian collision is detected. 
+        Collision thresholds can be set using instance of :py:class:`franka_tools.CollisionBehaviourInterface`.
+        """
         return any(self._joint_collision) or any(self._cartesian_collision)
         
 
@@ -613,14 +671,14 @@ _ns
         Command the Limb joints to a predefined set of "neutral" joint angles.
         From rosparam /franka_control/neutral_pose.
 
-        @type timeout: float
-        @param timeout: seconds to wait for move to finish [15]
-        @type speed: float
-        @param speed: ratio of maximum joint speed for execution
-                      default= 0.15; range= [0.0-1.0]
+        :type timeout: float
+        :param timeout: seconds to wait for move to finish [15]
+        :type speed: float
+        :param speed: ratio of maximum joint speed for execution
+         default= 0.15; range= [0.0-1.0]
         """
         self.set_joint_position_speed(speed)
-        self.move_to_joint_positions(self._neutral_pose_joints, timeout) if not self._params._in_sim else self.set_joint_positions(self._neutral_pose_joints)
+        self.move_to_joint_positions(self._neutral_pose_joints, timeout)
 
     def genf(self, joint, angle):
         def joint_diff():
@@ -631,25 +689,27 @@ _ns
                                 threshold=0.00085, test=None):
         """
         (Blocking) Commands the limb to the provided positions.
-
         Waits until the reported joint state matches that specified.
 
-        This function uses a low-pass filter to smooth the movement.
+        This function uses a low-pass filter using JointTrajectoryService
+        to smooth the movement or optionally uses MoveIt! to plan and
+        execute a trajectory.
 
-        @type positions: dict({str:float})
-        @param positions: joint_name:angle command
-        @type timeout: float
-        @param timeout: seconds to wait for move to finish [15]
-        @type threshold: float
-        @param threshold: position threshold in radians across each joint when
-        move is considered successful [0.008726646]
-        @param test: optional function returning True if motion must be aborted
+        :type positions: dict({str:float})
+        :param positions: joint_name:angle command
+        :type timeout: float
+        :param timeout: seconds to wait for move to finish [15]
+        :type threshold: float
+        :param threshold: position threshold in radians across each joint when
+         move is considered successful [0.00085]
+        :param test: optional function returning True if motion must be aborted
         """
+
         if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller:  
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
-        
+       
         min_traj_dur = 0.5
-        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names(), ns = self._ns)
+        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
         traj_client.clear()
 
         dur = []
@@ -659,7 +719,6 @@ _ns
 
         diffs = [self.genf(j, a) for j, a in positions.items() if j in self._joint_angle]
 
-  
         traj_client.start() # send the trajectory action request
         fail_msg = "ArmInterface: {0} limb failed to reach commanded joint positions.".format(
                                                       self.name.capitalize())
@@ -679,6 +738,9 @@ _ns
             rate=100,
             raise_on_error=False
             )
+        res = traj_client.result()
+        if res is not None and res.error_code:
+            rospy.loginfo("Trajectory Server Message: {}".format(res))
 
         rospy.sleep(0.5)
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
@@ -709,7 +771,7 @@ _ns
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
         
         min_traj_dur = 0.5
-        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names(), ns = self._ns)
+        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
         traj_client.clear()
 
         time_so_far = 0
@@ -770,7 +832,7 @@ _ns
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
         
         min_traj_dur = 0.5
-        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names(), ns = self._ns)
+        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
         traj_client.clear()
 
         speed_ratio = 0.05 # Move slower when approaching contact
@@ -799,6 +861,7 @@ _ns
         if not self.has_collided():
             rospy.logerr('Move To Touch did not end in making contact') 
         else:
+
             rospy.loginfo('Collision detected!')
 
         # The collision, though desirable, triggers a cartesian reflex error. We need to reset that error
@@ -831,12 +894,11 @@ _ns
         move is considered successful [0.008726646]
         @param test: optional function returning True if motion must be aborted
         """
-
         if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller: 
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
         
         min_traj_dur = 0.5
-        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names(), ns = self._ns)
+        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
         traj_client.clear()
 
         dur = []
@@ -951,13 +1013,42 @@ _ns
         wrench.torque.z = target_wrench[5]
         self._force_controller_publisher.publish(wrench)
 
+    def pause_controllers_and_do(self, func, *args, **kwargs):
+        """
+        Temporarily stops all active controllers and calls the provided function
+        before restarting the previously active controllers.
+
+        :param func: the function to be called
+        :type func: callable
+        """
+        assert callable(func), "ArmInterface: Invalid argument provided to ArmInterface->pause_controllers_and_do. Argument 1 should be callable."
+        active_controllers = self._ctrl_manager.list_active_controllers(only_motion_controllers = True)
+
+        rospy.loginfo("ArmInterface: Stopping motion controllers temporarily...")
+        for ctrlr in active_controllers:
+            self._ctrl_manager.stop_controller(ctrlr.name)
+        rospy.sleep(1.)
+
+        retval = func(*args, **kwargs)
+
+        rospy.sleep(1.)
+        rospy.loginfo("ArmInterface: Restarting previously active motion controllers.")
+        for ctrlr in active_controllers:
+            self._ctrl_manager.start_controller(ctrlr.name)
+        rospy.sleep(1.)
+        rospy.loginfo("ArmInterface: Controllers restarted.")
+
+        return retval
 
     def reset_EE_frame(self):
         """
-        Reset EE frame to default. (defined by FrankaFramesInterface.DEFAULT_TRANSFORMATIONS.EE_FRAME global variable defined above) 
+        Reset EE frame to default. (defined by 
+        FrankaFramesInterface.DEFAULT_TRANSFORMATIONS.EE_FRAME 
+        global variable defined in :py:class:`franka_tools.FrankaFramesInterface` 
+        source code) 
 
-        @rtype: [bool, str]
-        @return: [success status of service request, error msg if any]
+        :rtype: [bool, str]
+        :return: [success status of service request, error msg if any]
         """
         if self._frames_interface:
 
@@ -965,22 +1056,7 @@ _ns
                 rospy.loginfo("ArmInterface: EE Frame already reset")
                 return
 
-            active_controllers = self._ctrl_manager.list_active_controllers(only_motion_controllers = True)
-
-            rospy.loginfo("ArmInterface: Stopping motion controllers for resetting EE frame")
-            for ctrlr in active_controllers:
-                self._ctrl_manager.stop_controller(ctrlr.name)
-            rospy.sleep(1.)
-
-            retval = self._frames_interface.reset_EE_frame()
-
-            rospy.sleep(1.)
-            rospy.loginfo("ArmInterface: Restarting previously active motion controllers.")
-            for ctrlr in active_controllers:
-                self._ctrl_manager.start_controller(ctrlr.name)
-            rospy.sleep(1.)
-
-            return retval
+            return self.pause_controllers_and_do(self._frames_interface.reset_EE_frame)
 
         else:
             rospy.logwarn("ArmInterface: Frames changing not available in simulated environment")
@@ -993,31 +1069,18 @@ _ns
         transformation matrix defining the new desired EE frame with respect to the flange frame.
         Motion controllers are stopped for switching
 
-        @type frame: [float (16,)] / np.ndarray (4x4) 
-        @param frame: transformation matrix of new EE frame wrt flange frame (column major)
-        @rtype: [bool, str]
-        @return: [success status of service request, error msg if any]
+        :type frame: [float (16,)] / np.ndarray (4x4) 
+        :param frame: transformation matrix of new EE frame wrt flange frame (column major)
+        :rtype: [bool, str]
+        :return: [success status of service request, error msg if any]
         """
         if self._frames_interface:
 
-            frame = self._frames_interface._assert_frame_validity(frame)
+            if self._frames_interface.frames_are_same(self._frames_interface.get_EE_frame(as_mat=True), frame):
+                rospy.loginfo("ArmInterface: EE Frame already at the target frame.")
+                return True
 
-            active_controllers = self._ctrl_manager.list_active_controllers(only_motion_controllers = True)
-            rospy.sleep(1.)
-            rospy.loginfo("ArmInterface: Stopping motion controllers for changing EE frame")
-            for ctrlr in active_controllers:
-                self._ctrl_manager.stop_controller(ctrlr.name)
-            rospy.sleep(1.)
-
-            retval = self._frames_interface.set_EE_frame(frame)
-
-            rospy.sleep(1.)
-            rospy.loginfo("ArmInterface: Restarting previously active motion controllers.")
-            for ctrlr in active_controllers:
-                self._ctrl_manager.start_controller(ctrlr.name)
-            rospy.sleep(1.)
-
-            return retval
+            return self.pause_controllers_and_do(self._frames_interface.set_EE_frame,frame)
 
         else:
             rospy.logwarn("ArmInterface: Frames changing not available in simulated environment")
@@ -1027,38 +1090,50 @@ _ns
         Set new EE frame to the same frame as the link frame given by 'frame_name'
         Motion controllers are stopped for switching
 
-        @type frame_name: str 
-        @param frame_name: desired tf frame name in the tf tree
-        @rtype: [bool, str]
-        @return: [success status of service request, error msg if any]
+        :type frame_name: str 
+        :param frame_name: desired tf frame name in the tf tree
+        :rtype: [bool, str]
+        :return: [success status of service request, error msg if any]
         """
         if self._frames_interface:
             retval = True
             if not self._frames_interface.EE_frame_already_set(self._frames_interface.get_link_tf(frame_name)):
-                active_controllers = self._ctrl_manager.list_active_controllers(only_motion_controllers = True)
 
-                rospy.loginfo("ArmInterface: Stopping motion controllers for changing EE frame")
-                rospy.sleep(1.)
-                for ctrlr in active_controllers:
-                    self._ctrl_manager.stop_controller(ctrlr.name)
-                rospy.sleep(1.)
+                return self.pause_controllers_and_do(self._frames_interface.set_EE_frame_to_link,frame_name = frame_name, timeout = timeout)
 
-                retval = self._frames_interface.set_EE_frame_to_link(frame_name = frame_name, timeout = timeout)
-
-                rospy.sleep(1.)
-                rospy.loginfo("ArmInterface: Restarting previously active motion controllers.")
-                for ctrlr in active_controllers:
-                    self._ctrl_manager.start_controller(ctrlr.name)
-                rospy.sleep(1.)
-
-            return retval
         else:
             rospy.logwarn("ArmInterface: Frames changing not available in simulated environment")
 
+
+    def set_collision_threshold(self, cartesian_forces = None, joint_torques = None):
+        """
+        Set Force Torque thresholds for deciding robot has collided.
+
+        :return: True if service call successful, False otherwise
+        :rtype: bool
+        :param cartesian_forces: Cartesian force threshold for collision detection [x,y,z,R,P,Y] (robot motion stops if violated)
+        :type cartesian_forces: [float] size 6
+        :param joint_torques: Joint torque threshold for collision (robot motion stops if violated)
+        :type joint_torques: [float] size 7
+        """
+        if self._collision_behaviour_interface:
+            return self._collision_behaviour_interface.set_collision_threshold(joint_torques = joint_torques, cartesian_forces = cartesian_forces)
+        else:
+            rospy.logwarn("No CollisionBehaviourInterface object found!")
+
     def get_controller_manager(self):
+        """
+        :return: the FrankaControllerManagerInterface instance associated with the robot.
+        :rtype: franka_tools.FrankaControllerManagerInterface
+        """
         return self._ctrl_manager
 
     def get_frames_interface(self):
+
+        """
+        :return: the FrankaFramesInterface instance associated with the robot.
+        :rtype: franka_tools.FrankaFramesInterface
+        """
         return self._frames_interface
 
 
