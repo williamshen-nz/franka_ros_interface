@@ -44,9 +44,10 @@ from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
 from geometry_msgs.msg import PoseStamped, Wrench
 
+import franka_msgs
 import franka_interface
 import franka_dataflow
-from robot_params import RobotParams
+from .robot_params import RobotParams
 
 from franka_tools import FrankaFramesInterface, FrankaControllerManagerInterface, JointTrajectoryActionClient, CollisionBehaviourInterface
 
