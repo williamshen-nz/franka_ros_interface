@@ -45,7 +45,6 @@ from std_msgs.msg import Float64
 from geometry_msgs.msg import PoseStamped, Wrench
 
 import franka_interface
-import franka_control
 import franka_dataflow
 from robot_params import RobotParams
 
@@ -875,7 +874,7 @@ class ArmInterface(object):
         rospy.sleep(0.5)
         pub = rospy.Publisher('/franka_ros_interface/franka_control/error_recovery/goal', franka_control.msg.ErrorRecoveryActionGoal, queue_size=10)
         rospy.sleep(0.5)
-        pub.publish(franka_control.msg.ErrorRecoveryActionGoal())
+        pub.publish(franka_msgs.msg.ErrorRecoveryActionGoal())
         rospy.loginfo("Collision Reflex was reset")
 
     def move_from_touch(self, positions, timeout=10.0, threshold=0.00085):
