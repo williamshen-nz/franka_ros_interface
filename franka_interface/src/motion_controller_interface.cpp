@@ -50,8 +50,8 @@ void MotionControllerInterface::init(ros::NodeHandle& nh,
   if (!nh.getParam("/controllers_config/cartesian_impedance_controller", cartesian_impedance_controller_name_)) {
         cartesian_impedance_controller_name_ = "cartesian_impedance_controller";
    }
-  if (!nh.getParam("/controllers_config/force_controller", force_controller_name_)) {
-        force_controller_name_ = "force_controller";
+  if (!nh.getParam("/controllers_config/cartesian_force_controller", cartesian_force_controller_name_)) {
+        cartesian_force_controller_name_ = "cartesian_force_controller";
     }
   if (!nh.getParam("/controllers_config/trajectory_controller", trajectory_controller_name_)) {
         trajectory_controller_name_ = "position_joint_trajectory_controller";
@@ -68,7 +68,7 @@ void MotionControllerInterface::init(ros::NodeHandle& nh,
   all_controllers_.push_back(joint_torque_controller_name_);
   all_controllers_.push_back(joint_impedance_controller_name_);
   all_controllers_.push_back(cartesian_impedance_controller_name_);
-  all_controllers_.push_back(force_controller_name_);
+  all_controllers_.push_back(cartesian_force_controller_name_);
   all_controllers_.push_back(trajectory_controller_name_);
 
   bool default_defined = false;
@@ -84,8 +84,8 @@ void MotionControllerInterface::init(ros::NodeHandle& nh,
   controller_name_to_mode_map_[joint_torque_controller_name_] = franka_core_msgs::JointCommand::TORQUE_MODE;
   controller_name_to_mode_map_[joint_impedance_controller_name_] = franka_core_msgs::JointCommand::IMPEDANCE_MODE;
   controller_name_to_mode_map_[velocity_controller_name_] = franka_core_msgs::JointCommand::VELOCITY_MODE;
+  controller_name_to_mode_map_[cartesian_force_controller_name_] = -1; // Unsure
   controller_name_to_mode_map_[cartesian_impedance_controller_name_] = -1; // Unsure about this?
-  controller_name_to_mode_map_[force_controller_name_] = -1; // Unsure about this?
   controller_name_to_mode_map_[trajectory_controller_name_] = -1;
 
   if (! default_defined){
@@ -180,7 +180,7 @@ bool MotionControllerInterface::switchControllers(int control_mode) {
         stop_controllers.push_back(joint_torque_controller_name_);
         stop_controllers.push_back(velocity_controller_name_);
         stop_controllers.push_back(cartesian_impedance_controller_name_);
-        stop_controllers.push_back(force_controller_name_);
+        stop_controllers.push_back(cartesian_force_controller_name_);
         stop_controllers.push_back(trajectory_controller_name_);
         break;
       case franka_core_msgs::JointCommand::IMPEDANCE_MODE:
@@ -189,7 +189,7 @@ bool MotionControllerInterface::switchControllers(int control_mode) {
         stop_controllers.push_back(joint_torque_controller_name_);
         stop_controllers.push_back(velocity_controller_name_);
         stop_controllers.push_back(cartesian_impedance_controller_name_);
-        stop_controllers.push_back(force_controller_name_);
+        stop_controllers.push_back(cartesian_force_controller_name_);
         stop_controllers.push_back(trajectory_controller_name_);
         break;
       case franka_core_msgs::JointCommand::TORQUE_MODE:
@@ -198,7 +198,7 @@ bool MotionControllerInterface::switchControllers(int control_mode) {
         stop_controllers.push_back(joint_impedance_controller_name_);
         stop_controllers.push_back(velocity_controller_name_);
         stop_controllers.push_back(cartesian_impedance_controller_name_);
-        stop_controllers.push_back(force_controller_name_);
+        stop_controllers.push_back(cartesian_force_controller_name_);
         stop_controllers.push_back(trajectory_controller_name_);
         break;
       case franka_core_msgs::JointCommand::VELOCITY_MODE:
@@ -207,7 +207,7 @@ bool MotionControllerInterface::switchControllers(int control_mode) {
         stop_controllers.push_back(joint_impedance_controller_name_);
         stop_controllers.push_back(joint_torque_controller_name_);
         stop_controllers.push_back(cartesian_impedance_controller_name_);
-        stop_controllers.push_back(force_controller_name_);
+        stop_controllers.push_back(cartesian_force_controller_name_);
         stop_controllers.push_back(trajectory_controller_name_);
         break;        
       default:

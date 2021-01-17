@@ -210,10 +210,10 @@ class ArmInterface(object):
         self._cartesian_stiffness_publisher = rospy.Publisher("impedance_stiffness", CartImpedanceStiffness, queue_size=10)
 
         # Force Control Publisher
-        self._force_controller_publisher = rospy.Publisher("wrench_target", Wrench, queue_size=10)
+        self._cartesian_force_controller_publisher = rospy.Publisher("wrench_target", Wrench, queue_size=10)
 
         # Torque Control Publisher
-        self._torque_controller_publisher = rospy.Publisher("torque_target", TorqueCmd, queue_size=20)
+        self._joint_torque_controller_publisher = rospy.Publisher("torque_target", TorqueCmd, queue_size=20)
 
         # Joint Impedance Controller Publishers
         self._joint_impedance_publisher = rospy.Publisher("joint_impedance_position_velocity", JICmd, queue_size=20)
@@ -259,8 +259,8 @@ class ArmInterface(object):
         self._joint_command_publisher.unregister()
         self._cartesian_impedance_pose_publisher.unregister()
         self._cartesian_stiffness_publisher.unregister()
-        self._force_controller_publisher.unregister()
-        self._torque_controller_publisher.unregister()
+        self._cartesian_force_controller_publisher.unregister()
+        self._joint_torque_controller_publisher.unregister()
         self._joint_impedance_publisher.unregister()
         self._joint_stiffness_publisher.unregister()
 
@@ -973,16 +973,16 @@ class ArmInterface(object):
         while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
             rospy.sleep(0.1)
    
-    def set_torque(self, tau):
+    def set_joint_torque(self, tau):
         raise NotImplementedError("Still working on the bugs in this!")
 
-        switch_ctrl = True if self._ctrl_manager.current_controller != self._ctrl_manager.ntorque_controller else False
+        switch_ctrl = True if self._ctrl_manager.current_controller != self._ctrl_manager.joint_torque_controller else False
         if switch_ctrl:
-            self.switchToController(self._ctrl_manager.ntorque_controller)
+            self.switchToController(self._ctrl_manager.joint_torque_controller)
 
         torque = TorqueCmd()
         torque.torque = tau
-        self._torque_controller_publisher.publish(torque)
+        self._joint_torque_controller_publisher.publish(torque)
 
     def execute_cart_impedance_traj(self, poses, stiffness=None):
         if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
@@ -1000,9 +1000,9 @@ class ArmInterface(object):
             self.set_joint_impedance_config(qs[i], stiffness)
             if i == 0: self.resetErrors()
 
-    def exert_force(self, target_wrench):
-        if self._ctrl_manager.current_controller != self._ctrl_manager.force_controller: 
-            self.switchToController(self._ctrl_manager.force_controller)
+    def set_cartesian_force(self, target_wrench):
+        if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_force_controller: 
+            self.switchToController(self._ctrl_manager.cartesian_force_controller)
 
         wrench = Wrench()
         wrench.force.x = target_wrench[0]
@@ -1011,7 +1011,7 @@ class ArmInterface(object):
         wrench.torque.x = target_wrench[3]
         wrench.torque.y = target_wrench[4] 
         wrench.torque.z = target_wrench[5]
-        self._force_controller_publisher.publish(wrench)
+        self._cartesian_force_controller_publisher.publish(wrench)
 
     def pause_controllers_and_do(self, func, *args, **kwargs):
         """

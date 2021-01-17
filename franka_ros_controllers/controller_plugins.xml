@@ -49,18 +49,17 @@
       Controller for commanding cartesian velocities to be exerted by the Franka Arm
     </description>
   </class>
+  <class name="franka_ros_controllers/CartesianForceController"
+         type="franka_ros_controllers::CartesianForceController"
+         base_class_type="controller_interface::ControllerBase">
+    <description>
+      Controller for commanding cartesian forces to be exerted by the Franka Arm
+    </description>
+  </class>
   <class name="franka_ros_controllers/CartesianImpedanceController"
          type="franka_ros_controllers::CartesianImpedanceController"
          base_class_type="controller_interface::ControllerBase">
     <description>
       Controller for commanding cartesian impedances to be exerted by the Franka Arm
     </description>
-  </class>
-  <class name="franka_ros_controllers/ForceController"
-         type="franka_ros_controllers::ForceController"
-         base_class_type="controller_interface::ControllerBase">
-    <description>
-      Controller for commanding 6D forces to be exerted by the Franka Arm
-    </description>
-  </class>
 </library>
