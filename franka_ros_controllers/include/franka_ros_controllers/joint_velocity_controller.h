@@ -12,9 +12,9 @@
 #include <ros/node_handle.h>
 #include <ros/time.h>
 
-namespace franka_example_controllers {
+namespace franka_ros_controllers {
 
-class JointVelocityExampleController : public controller_interface::MultiInterfaceController<
+class JointVelocityController : public controller_interface::MultiInterfaceController<
                                            hardware_interface::VelocityJointInterface,
                                            franka_hw::FrankaStateInterface> {
  public:
@@ -29,4 +29,4 @@ class JointVelocityExampleController : public controller_interface::MultiInterfa
   ros::Duration elapsed_time_;
 };
 
-}  // namespace franka_example_controllers
+}  // namespace franka_ros_controllers

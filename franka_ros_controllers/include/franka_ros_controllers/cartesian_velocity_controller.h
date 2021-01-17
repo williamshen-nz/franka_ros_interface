@@ -12,9 +12,9 @@
 #include <ros/node_handle.h>
 #include <ros/time.h>
 
-namespace franka_example_controllers {
+namespace franka_ros_controllers {
 
-class CartesianVelocityExampleController : public controller_interface::MultiInterfaceController<
+class CartesianVelocityController : public controller_interface::MultiInterfaceController<
                                                franka_hw::FrankaVelocityCartesianInterface,
                                                franka_hw::FrankaStateInterface> {
  public:
@@ -29,4 +29,4 @@ class CartesianVelocityExampleController : public controller_interface::MultiInt
   ros::Duration elapsed_time_;
 };
 
-}  // namespace franka_example_controllers
+}  // namespace franka_ros_controllers
