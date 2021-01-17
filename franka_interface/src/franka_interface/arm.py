@@ -587,6 +587,7 @@ class ArmInterface(object):
             rospy.logwarn("ArmInterface: Setting speed above 0.3 could be risky!! Be extremely careful.")
         self._speed_ratio = speed
 
+    '''
     def set_joint_positions(self, positions):
         """
         Commands the joints of this limb to the specified positions.
@@ -645,7 +646,7 @@ class ArmInterface(object):
         self._command_msg.mode = JointCommand.IMPEDANCE_MODE
         self._command_msg.header.stamp = rospy.Time.now()
         self._joint_command_publisher.publish(self._command_msg)
-
+    '''
 
     def has_collided(self):
         """
@@ -923,7 +924,7 @@ class ArmInterface(object):
         rospy.sleep(0.5)
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
-    def set_cart_impedance_pose(self, pose, stiffness=None):
+    def set_cartesian_impedance_pose(self, pose, stiffness=None):
         if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
             self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
 
@@ -973,7 +974,7 @@ class ArmInterface(object):
         while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
             rospy.sleep(0.1)
    
-    def set_joint_torque(self, tau):
+    def set_joint_torques(self, tau):
         raise NotImplementedError("Still working on the bugs in this!")
 
         switch_ctrl = True if self._ctrl_manager.current_controller != self._ctrl_manager.joint_torque_controller else False
@@ -984,7 +985,7 @@ class ArmInterface(object):
         torque.torque = tau
         self._joint_torque_controller_publisher.publish(torque)
 
-    def execute_cart_impedance_traj(self, poses, stiffness=None):
+    def execute_cartesian_impedance_path(self, poses, stiffness=None):
         if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
             self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
 
@@ -992,7 +993,7 @@ class ArmInterface(object):
             self.set_cart_impedance_pose(poses[i], stiffness)
             if i == 0: self.resetErrors()
 
-    def execute_joint_impedance_traj(self, qs, stiffness=None):
+    def execute_joint_impedance_path(self, qs, stiffness=None):
         if self._ctrl_manager.current_controller != self._ctrl_manager.joint_impedance_controller:
             self.switchToController(self._ctrl_manager.joint_impedance_controller)
 

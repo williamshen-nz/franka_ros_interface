@@ -66,7 +66,7 @@ namespace franka_interface {
     boost::shared_ptr<controller_manager::ControllerManager> controller_manager_;
 
     std::string joint_position_controller_name_;
-    std::string velocity_controller_name_;
+    std::string joint_velocity_controller_name_;
     std::string joint_impedance_controller_name_;
     std::string joint_torque_controller_name_;
     std::string cartesian_impedance_controller_name_;
