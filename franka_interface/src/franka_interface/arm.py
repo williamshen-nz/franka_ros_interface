@@ -874,7 +874,7 @@ class ArmInterface(object):
 
     def resetErrors(self):
         rospy.sleep(0.5)
-        pub = rospy.Publisher('/franka_ros_interface/franka_control/error_recovery/goal', franka_control.msg.ErrorRecoveryActionGoal, queue_size=10)
+        pub = rospy.Publisher('/franka_ros_interface/franka_control/error_recovery/goal', franka_msgs.msg.ErrorRecoveryActionGoal, queue_size=10)
         rospy.sleep(0.5)
         pub.publish(franka_msgs.msg.ErrorRecoveryActionGoal())
         rospy.loginfo("Collision Reflex was reset")
