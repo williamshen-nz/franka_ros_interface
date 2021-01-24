@@ -79,7 +79,7 @@ bool JointVelocityController::init(hardware_interface::RobotHW* robot_hardware,
     return false;
   }
 
-  try {
+  /*try {
     auto state_handle = state_interface->getHandle("panda_robot");
 
     std::array<double, 7> q_start{{0, -M_PI_4, 0, -3 * M_PI_4, 0, M_PI_2, M_PI_4}};

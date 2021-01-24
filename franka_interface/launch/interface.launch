@@ -48,7 +48,7 @@
                       output="screen" args="load
                                            franka_ros_interface/joint_position_controller
                                            franka_ros_interface/effort_joint_position_controller
-                                           franka_ros_interface/velocity_joint_velocity_controller 
+                                           franka_ros_interface/joint_velocity_controller 
                                            franka_ros_interface/joint_torque_controller
                                            franka_ros_interface/joint_impedance_controller 
                                            franka_ros_interface/cartesian_force_controller

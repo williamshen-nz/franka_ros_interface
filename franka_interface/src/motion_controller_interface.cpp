@@ -38,8 +38,8 @@ void MotionControllerInterface::init(ros::NodeHandle& nh,
   if (!nh.getParam("/controllers_config/joint_position_controller", joint_position_controller_name_)) {
         joint_position_controller_name_ = "joint_position_controller";
     }
-  if (!nh.getParam("/controllers_config/velocity_controller", velocity_controller_name_)) {
-        velocity_controller_name_ = "velocity_joint_velocity_controller";
+  if (!nh.getParam("/controllers_config/joint_velocity_controller", joint_velocity_controller_name_)) {
+        joint_velocity_controller_name_ = "joint_velocity_controller";
     }
   if (!nh.getParam("/controllers_config/joint_torque_controller", joint_torque_controller_name_)) {
         joint_torque_controller_name_ = "joint_torque_controller";
@@ -64,7 +64,7 @@ void MotionControllerInterface::init(ros::NodeHandle& nh,
 
   all_controllers_.clear();
   all_controllers_.push_back(joint_position_controller_name_);
-  all_controllers_.push_back(velocity_controller_name_);
+  all_controllers_.push_back(joint_velocity_controller_name_);
   all_controllers_.push_back(joint_torque_controller_name_);
   all_controllers_.push_back(joint_impedance_controller_name_);
   all_controllers_.push_back(cartesian_impedance_controller_name_);
@@ -83,7 +83,7 @@ void MotionControllerInterface::init(ros::NodeHandle& nh,
   controller_name_to_mode_map_[joint_position_controller_name_] = franka_core_msgs::JointCommand::POSITION_MODE;
   controller_name_to_mode_map_[joint_torque_controller_name_] = franka_core_msgs::JointCommand::TORQUE_MODE;
   controller_name_to_mode_map_[joint_impedance_controller_name_] = franka_core_msgs::JointCommand::IMPEDANCE_MODE;
-  controller_name_to_mode_map_[velocity_controller_name_] = franka_core_msgs::JointCommand::VELOCITY_MODE;
+  controller_name_to_mode_map_[joint_velocity_controller_name_] = franka_core_msgs::JointCommand::VELOCITY_MODE;
   controller_name_to_mode_map_[cartesian_force_controller_name_] = -1; // Unsure
   controller_name_to_mode_map_[cartesian_impedance_controller_name_] = -1; // Unsure about this?
   controller_name_to_mode_map_[trajectory_controller_name_] = -1;
@@ -178,7 +178,7 @@ bool MotionControllerInterface::switchControllers(int control_mode) {
         start_controllers.push_back(joint_position_controller_name_);
         stop_controllers.push_back(joint_impedance_controller_name_);
         stop_controllers.push_back(joint_torque_controller_name_);
-        stop_controllers.push_back(velocity_controller_name_);
+        stop_controllers.push_back(joint_velocity_controller_name_);
         stop_controllers.push_back(cartesian_impedance_controller_name_);
         stop_controllers.push_back(cartesian_force_controller_name_);
         stop_controllers.push_back(trajectory_controller_name_);
@@ -187,7 +187,7 @@ bool MotionControllerInterface::switchControllers(int control_mode) {
         start_controllers.push_back(joint_impedance_controller_name_);
         stop_controllers.push_back(joint_position_controller_name_);
         stop_controllers.push_back(joint_torque_controller_name_);
-        stop_controllers.push_back(velocity_controller_name_);
+        stop_controllers.push_back(joint_velocity_controller_name_);
         stop_controllers.push_back(cartesian_impedance_controller_name_);
         stop_controllers.push_back(cartesian_force_controller_name_);
         stop_controllers.push_back(trajectory_controller_name_);
@@ -196,13 +196,13 @@ bool MotionControllerInterface::switchControllers(int control_mode) {
         start_controllers.push_back(joint_torque_controller_name_);
         stop_controllers.push_back(joint_position_controller_name_);
         stop_controllers.push_back(joint_impedance_controller_name_);
-        stop_controllers.push_back(velocity_controller_name_);
+        stop_controllers.push_back(joint_velocity_controller_name_);
         stop_controllers.push_back(cartesian_impedance_controller_name_);
         stop_controllers.push_back(cartesian_force_controller_name_);
         stop_controllers.push_back(trajectory_controller_name_);
         break;
       case franka_core_msgs::JointCommand::VELOCITY_MODE:
-        start_controllers.push_back(velocity_controller_name_);
+        start_controllers.push_back(joint_velocity_controller_name_);
         stop_controllers.push_back(joint_position_controller_name_);
         stop_controllers.push_back(joint_impedance_controller_name_);
         stop_controllers.push_back(joint_torque_controller_name_);
