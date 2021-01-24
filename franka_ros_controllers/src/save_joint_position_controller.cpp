@@ -111,7 +111,7 @@ bool JointPositionController::init(hardware_interface::RobotHW* robot_hardware,
   }
   trigger_publish_ = franka_hw::TriggerRate(controller_state_publish_rate);
 
-  /*dynamic_reconfigure_joint_controller_params_node_ =
+  dynamic_reconfigure_joint_controller_params_node_ =
       ros::NodeHandle("/franka_ros_interface/joint_position_controller/arm/controller_parameters_config");
 
   dynamic_server_joint_controller_params_ = std::make_unique<
@@ -119,9 +119,8 @@ bool JointPositionController::init(hardware_interface::RobotHW* robot_hardware,
       dynamic_reconfigure_joint_controller_params_node_);
 
   dynamic_server_joint_controller_params_->setCallback(
-      boost::bind(&JointPositionController::jointControllerParamCallback, this, _1, _2));*/
+      boost::bind(&JointPositionController::jointControllerParamCallback, this, _1, _2));
 
-  // TODO all remove this whole part
   publisher_controller_states_.init(node_handle, "/franka_ros_interface/motion_controller/arm/joint_controller_states", 1);
 
   {
@@ -156,7 +155,6 @@ void JointPositionController::update(const ros::Time& time,
     pos_d_[i] = filter_val * pos_d_target_[i] + (1.0 - filter_val) * pos_d_[i];
   }
 
-  /*
   if (trigger_publish_() && publisher_controller_states_.trylock()) {
     for (size_t i = 0; i < 7; ++i){
 
@@ -170,7 +168,6 @@ void JointPositionController::update(const ros::Time& time,
 
     publisher_controller_states_.unlockAndPublish();        
   }
-  */
 
   // update parameters changed online either through dynamic reconfigure or through the interactive
   // target by filtering
@@ -206,17 +203,19 @@ void JointPositionController::jointPosCmdCallback(const franka_core_msgs::JointC
         pos_d_target_ = prev_pos_;
 
       }
-      else {
+      else
+      {
         std::copy_n(msg->position.begin(), 7, pos_d_target_.begin());
       }
       
-    } 
+    }
+    // else ROS_ERROR_STREAM("PositionJointPositionController: Published Command msg are not of JointCommand::POSITION_MODE! Dropping message");
 }
 
-/*void JointPositionController::jointControllerParamCallback(franka_ros_controllers::joint_controller_paramsConfig& config,
+void JointPositionController::jointControllerParamCallback(franka_ros_controllers::joint_controller_paramsConfig& config,
                                uint32_t level){
   target_filter_joint_pos_ = config.position_joint_delta_filter;
-}*/
+}
 
 }  // namespace franka_ros_controllers
 
