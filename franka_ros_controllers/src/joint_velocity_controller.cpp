@@ -14,25 +14,50 @@ namespace franka_ros_controllers {
 
 bool JointVelocityController::init(hardware_interface::RobotHW* robot_hardware,
                                           ros::NodeHandle& node_handle) {
+
+  desired_joints_subscriber_ = node_handle.subscribe(
+      "/franka_ros_interface/motion_controller/arm/joint_commands", 20, &JointVelocityController::jointVelCmdCallback, this,
+      ros::TransportHints().reliable().tcpNoDelay());
+
   velocity_joint_interface_ = robot_hardware->get<hardware_interface::VelocityJointInterface>();
   if (velocity_joint_interface_ == nullptr) {
     ROS_ERROR(
         "JointVelocityController: Error getting velocity joint interface from hardware!");
     return false;
   }
-  std::vector<std::string> joint_names;
-  if (!node_handle.getParam("joint_names", joint_names)) {
+
+  if (!node_handle.getParam("/robot_config/joint_names", joint_limits_.joint_names)) {
     ROS_ERROR("JointVelocityController: Could not parse joint names");
   }
-  if (joint_names.size() != 7) {
+  if (joint_limits_.joint_names.size() != 7) {
     ROS_ERROR_STREAM("JointVelocityController: Wrong number of joint names, got "
-                     << joint_names.size() << " instead of 7 names!");
+                     << joint_limits_.joint_names.size() << " instead of 7 names!");
     return false;
   }
+  std::map<std::string, double> vel_limit_map;
+  if (!node_handle.getParam("/robot_config/joint_config/joint_velocity_limit", vel_limit_map) ) {
+  ROS_ERROR(
+      "JointVelocityController: Joint limits parameters not provided, aborting "
+      "controller init!");
+  return false;
+      }
+
+  for (size_t i = 0; i < joint_limits_.joint_names.size(); ++i){
+    if (vel_limit_map.find(joint_limits_.joint_names[i]) != vel_limit_map.end())
+      {
+        joint_limits_.velocity.push_back(vel_limit_map[joint_limits_.joint_names[i]]);
+      }
+      else
+      {
+        ROS_ERROR("JointVelocityController: Unable to find lower velocity limit values for joint %s...",
+                       joint_limits_.joint_names[i].c_str());
+      }
+  }
+
   velocity_joint_handles_.resize(7);
   for (size_t i = 0; i < 7; ++i) {
     try {
-      velocity_joint_handles_[i] = velocity_joint_interface_->getHandle(joint_names[i]);
+      velocity_joint_handles_[i] = velocity_joint_interface_->getHandle(joint_limits_.joint_names[i]);
     } catch (const hardware_interface::HardwareInterfaceException& ex) {
       ROS_ERROR_STREAM(
           "JointVelocityController: Exception getting joint handles: " << ex.what());
@@ -40,7 +65,15 @@ bool JointVelocityController::init(hardware_interface::RobotHW* robot_hardware,
     }
   }
 
-  auto state_interface = robot_hardware->get<franka_hw::FrankaStateInterface>();
+  double controller_state_publish_rate(30.0);
+  if (!node_handle.getParam("controller_state_publish_rate", controller_state_publish_rate)) {
+    ROS_INFO_STREAM("JointVelocityController: Did not find controller_state_publish_rate. Using default "
+                    << controller_state_publish_rate << " [Hz].");
+  }
+  trigger_publish_ = franka_hw::TriggerRate(controller_state_publish_rate);
+
+
+  /*auto state_interface = robot_hardware->get<franka_hw::FrankaStateInterface>();
   if (state_interface == nullptr) {
     ROS_ERROR("JointVelocityController: Could not get state interface from hardware");
     return false;
@@ -63,30 +96,73 @@ bool JointVelocityController::init(hardware_interface::RobotHW* robot_hardware,
     ROS_ERROR_STREAM(
         "JointVelocityController: Exception getting state handle: " << e.what());
     return false;
-  }
+  }*/
 
   return true;
 }
 
 void JointVelocityController::starting(const ros::Time& /* time */) {
-  elapsed_time_ = ros::Duration(0.0);
+
+  for (size_t i = 0; i < 7; ++i) {
+    initial_vel_[i] = velocity_joint_handles_[i].getVelocity();
+  }
+  vel_d_ = initial_vel_;
+  prev_d_ = vel_d_;
+
 }
 
 void JointVelocityController::update(const ros::Time& /* time */,
                                      const ros::Duration& period) {
-  elapsed_time_ += period;
 
-  ros::Duration time_max(8.0);
-  double omega_max = 0.1;
-  double cycle = std::floor(
-      std::pow(-1.0, (elapsed_time_.toSec() - std::fmod(elapsed_time_.toSec(), time_max.toSec())) /
-                         time_max.toSec()));
-  double omega = cycle * omega_max / 2.0 *
-                 (1.0 - std::cos(2.0 * M_PI / time_max.toSec() * elapsed_time_.toSec()));
-
-  for (auto joint_handle : velocity_joint_handles_) {
-    joint_handle.setCommand(omega);
+  for (size_t i = 0; i < 7; ++i) {
+    velocity_joint_handles_[i].setCommand(vel_d_[i]);
   }
+  double filter_val = filter_joint_vel_ * filter_factor_;
+  for (size_t i = 0; i < 7; ++i) {
+    prev_d_[i] = velocity_joint_handles_[i].getVelocity();
+    vel_d_[i] = filter_val * vel_d_target_[i] + (1.0 - filter_val) * vel_d_[i];
+  }
+
+  // update parameters changed online either through dynamic reconfigure or through the interactive
+  // target by filtering
+  //filter_joint_vel_ = param_change_filter_ * target_filter_joint_vel_ + (1.0 - param_change_filter_) * filter_joint_vel_;
+}
+
+bool JointVelocityController::checkVelocityLimits(std::vector<double> velocities)
+{
+  // bool retval = true;
+  for (size_t i = 0;  i < 7; ++i){
+    if (!(abs(velocities[i]) <= joint_limits_.velocity[i])){
+      return true;
+    }
+  }
+
+  return false;
+}
+
+void JointVelocityController::jointVelCmdCallback(const franka_core_msgs::JointCommandConstPtr& msg) {
+
+    if (msg->mode == franka_core_msgs::JointCommand::VELOCITY_MODE){
+      if (msg->velocity.size() != 7) {
+        ROS_ERROR_STREAM(
+            "JointVelocityController: Published Commands are not of size 7");
+        vel_d_ = prev_d_;
+        vel_d_target_ = prev_d_;
+      }
+      else if (checkVelocityLimits(msg->velocity)) {
+         ROS_ERROR_STREAM(
+            "JointVelocityController: Commanded velocities are beyond allowed velocity limits.");
+        vel_d_ = prev_d_;
+        vel_d_target_ = prev_d_;
+
+      }
+      else
+      {
+        std::copy_n(msg->velocity.begin(), 7, vel_d_target_.begin());
+      }
+
+    }
+    // else ROS_ERROR_STREAM("JointVelocityController: Published Command msg are not of JointCommand::Velocity! Dropping message");
 }
 
 void JointVelocityController::stopping(const ros::Time& /*time*/) {
