@@ -924,6 +924,82 @@ class ArmInterface(object):
         rospy.sleep(0.5)
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
+    def set_joint_velocity(self, v):
+        #TODO Need a better interface. Use action lib?
+
+        #Need q converted to list
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_velocity_controller: 
+            self.switchToController(self._ctrl_manager.joint_velocity_controller)
+
+        return NotImplementedError
+
+    def set_joint_impedance_config(self, q, stiffness=None):
+        #Need q converted to list
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_impedance_controller: 
+            self.switchToController(self._ctrl_manager.joint_impedance_controller)
+
+        if stiffness is not None:
+            stiffness_gains = JointImpedanceStiffness()
+            stiffness_gains = stiffness
+            self._joint_stiffness_publisher.publish(stiffness_gains)
+
+        marker_pose = JICmd()
+        marker_pose.position = q
+        marker_pose.velocity = [0.005]*7
+        self._joint_impedance_publisher.publish(marker_pose)
+
+        # Do not return until motion complete
+        rospy.sleep(0.1)
+        while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
+            rospy.sleep(0.1)
+
+    def execute_joint_impedance_path(self, qs, stiffness=None):
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_impedance_controller:
+            self.switchToController(self._ctrl_manager.joint_impedance_controller)
+
+        for i in xrange(len(qs)):
+            self.set_joint_impedance_config(qs[i], stiffness)
+            if i == 0: self.resetErrors()
+   
+    def set_joint_torques(self, tau):
+        raise NotImplementedError("Still working on the bugs in this!")
+
+        switch_ctrl = True if self._ctrl_manager.current_controller != self._ctrl_manager.joint_torque_controller else False
+        if switch_ctrl:
+            self.switchToController(self._ctrl_manager.joint_torque_controller)
+
+        torque = TorqueCmd()
+        torque.torque = tau
+        self._joint_torque_controller_publisher.publish(torque)
+
+    def set_cartesian_pose(self, pose):
+        if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_pose_controller:
+            self.switchToController(self._ctrl_manager.cartesian_pose_controller)
+
+        marker_pose = PoseStamped()
+        marker_pose.pose.position.x = pose['position'][0]
+        marker_pose.pose.position.y = pose['position'][1]
+        marker_pose.pose.position.z = pose['position'][2]
+        marker_pose.pose.orientation.x = pose['orientation'].x
+        marker_pose.pose.orientation.y = pose['orientation'].y
+        marker_pose.pose.orientation.z = pose['orientation'].z
+        marker_pose.pose.orientation.w = pose['orientation'].w
+        self._cartesian_impedance_pose_publisher.publish(marker_pose)
+
+        # Do not return until motion complete
+        rospy.sleep(0.1)
+        while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
+            rospy.sleep(0.1)
+
+    def set_cartesian_velocity(self, w):
+        #TODO Need a better interface. Use action lib?
+
+        #Need q converted to list
+        if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_velocity_controller: 
+            self.switchToController(self._ctrl_manager.cartesian_velocity_controller)
+
+        return NotImplementedError
+
     def set_cartesian_impedance_pose(self, pose, stiffness=None):
         if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
             self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
@@ -953,52 +1029,12 @@ class ArmInterface(object):
         while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
             rospy.sleep(0.1)
 
-
-    def set_joint_impedance_config(self, q, stiffness=None):
-        #Need q converted to list
-        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_impedance_controller: 
-            self.switchToController(self._ctrl_manager.joint_impedance_controller)
-
-        if stiffness is not None:
-            stiffness_gains = JointImpedanceStiffness()
-            stiffness_gains = stiffness
-            self._joint_stiffness_publisher.publish(stiffness_gains)
-
-        marker_pose = JICmd()
-        marker_pose.position = q
-        marker_pose.velocity = [0.005]*7
-        self._joint_impedance_publisher.publish(marker_pose)
-
-        # Do not return until motion complete
-        rospy.sleep(0.1)
-        while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
-            rospy.sleep(0.1)
-   
-    def set_joint_torques(self, tau):
-        raise NotImplementedError("Still working on the bugs in this!")
-
-        switch_ctrl = True if self._ctrl_manager.current_controller != self._ctrl_manager.joint_torque_controller else False
-        if switch_ctrl:
-            self.switchToController(self._ctrl_manager.joint_torque_controller)
-
-        torque = TorqueCmd()
-        torque.torque = tau
-        self._joint_torque_controller_publisher.publish(torque)
-
     def execute_cartesian_impedance_path(self, poses, stiffness=None):
         if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
             self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
 
         for i in xrange(len(poses)):
             self.set_cart_impedance_pose(poses[i], stiffness)
-            if i == 0: self.resetErrors()
-
-    def execute_joint_impedance_path(self, qs, stiffness=None):
-        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_impedance_controller:
-            self.switchToController(self._ctrl_manager.joint_impedance_controller)
-
-        for i in xrange(len(qs)):
-            self.set_joint_impedance_config(qs[i], stiffness)
             if i == 0: self.resetErrors()
 
     def set_cartesian_force(self, target_wrench):
