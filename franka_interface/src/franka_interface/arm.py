@@ -157,6 +157,9 @@ class ArmInterface(object):
         # neutral pose joint positions
         self._neutral_pose_joints = self._params.get_neutral_pose()
 
+        # pbal start pose joint positions
+        self._pbal_start_pose_joints = self._params.get_pbal_start_pose()
+
         self._frames_interface = FrankaFramesInterface()
         self._ctrl_manager = FrankaControllerManagerInterface(ns = self._ns, sim = True if self._params._in_sim else False)
 
@@ -621,6 +624,20 @@ _ns
         """
         self.set_joint_position_speed(speed)
         self.move_to_joint_positions(self._neutral_pose_joints, timeout) if not self._params._in_sim else self.set_joint_positions(self._neutral_pose_joints)
+
+    def move_to_pbal_start(self, timeout=15.0, speed=0.15):
+        """
+        Command the Limb joints to a predefined set of "pbal start" joint angles.
+        From rosparam /franka_control/neutral_pose.
+
+        @type timeout: float
+        @param timeout: seconds to wait for move to finish [15]
+        @type speed: float
+        @param speed: ratio of maximum joint speed for execution
+                      default= 0.15; range= [0.0-1.0]
+        """
+        self.set_joint_position_speed(speed)
+        self.move_to_joint_positions(self._pbal_start_pose_joints, timeout) if not self._params._in_sim else self.set_joint_positions(self._pbal_start_pose_joints)
 
     def genf(self, joint, angle):
         def joint_diff():

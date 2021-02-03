@@ -12,12 +12,14 @@
   
 <!--   <node pkg="rviz" type="rviz" output="screen" name="rviz" args="-d $(find franka_interface)/launch/rviz/franka_description_with_marker.rviz"/> -->
 
-  <node name="ee_pose_in_world_from_camera" pkg="franka_ros_controllers" type="ee_pose_in_world_from_camera.py" respawn="true"> </node>
+  <!-- <node name="ee_pose_in_world_from_camera" pkg="franka_ros_controllers" type="ee_pose_in_world_from_camera.py" respawn="true"> </node> -->
+
+<!--   <node name="line_ee_pose_in_world_from_camera" pkg="franka_ros_controllers" type="line_ee_pose_in_world_from_camera.py" respawn="true"> </node> -->
   
   <node name="obj_apriltag_pose_in_world_from_camera" pkg="franka_ros_controllers" type="obj_apriltag_pose_in_world_from_camera.py" respawn="true" >
   </node>
 
-  <node name="ft_sensor_in_base_frame" pkg="franka_ros_controllers" type="ft_sensor_in_base_frame.py" respawn="true" >
+  <node name="ft_sensor_in_base_and_end_effector_frame" pkg="franka_ros_controllers" type="ft_sensor_in_base_and_end_effector_frames.py" respawn="true" >
   </node>
 
   <node name="ee_pose_in_world_from_franka" pkg="franka_ros_controllers" type="ee_pose_in_world_from_franka.py" respawn="true" >

@@ -4,13 +4,8 @@ import os
 
 import tf
 import rospy
-from geometry_msgs.msg import PoseStamped, Pose2D, WrenchStamped
+from geometry_msgs.msg import PoseStamped, Pose2D, WrenchStamped, PointStamped
 
-
-command_pose_pub = rospy.Publisher('robot2_EGM/SetCartesian',
-                                   PoseStamped,
-                                   queue_size=100,
-                                   latch=True)
 
 def list2pose_stamped(pose, frame_id="world"):
     msg = PoseStamped()
@@ -39,7 +34,7 @@ def lookupTransform(homeFrame, targetFrame, listener):
             rospy.sleep(retryTime)
     return None, None
 
-def transform_wrench(wrench_source, pose_transform):
+def rotate_wrench(wrench_source, pose_transform):
     force_source, torque_source = wrenchstamped_2FT(wrench_source)
     T_transform_source = matrix_from_pose(pose_transform)[:3, :3]
     force_transformed = np.matmul(T_transform_source, np.array(force_source))
@@ -47,6 +42,14 @@ def transform_wrench(wrench_source, pose_transform):
 
     return list2wrench_stamped(force_transformed.tolist() + 
         torque_transformed.tolist())
+
+def wrench_reference_point_change(wrench_source, vector_from_new_ref):
+    # wrench source and vector_from_new_ref need in the same frame
+    force_source, torque_source = wrenchstamped_2FT(wrench_source)
+    torque_transformed = np.array(torque_source) + np.cross(np.array(vector_from_new_ref), 
+        np.array(force_source))
+    return list2wrench_stamped(force_source + torque_transformed.tolist())
+
 
 def wrenchstamped_2FT(wrench):
 
@@ -130,6 +133,18 @@ def list2pose_twod(pose):
     msg.y = pose[1]
     msg.theta = pose[2]
     return msg
+
+def list2point_stamped(xyz):
+    msg = PointStamped()
+    msg.point.x = xyz[0]
+    msg.point.y = xyz[1]
+    msg.point.z = xyz[2]
+    return msg
+
+def point_stamped2list(msg):
+    return [msg.point.x, 
+        msg.point.y,
+        msg.point.z]
 
 def quat2list(quat):
     return[quat.x, quat.y, quat.z, quat.w]

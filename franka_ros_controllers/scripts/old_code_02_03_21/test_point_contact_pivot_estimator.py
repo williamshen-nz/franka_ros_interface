@@ -133,7 +133,7 @@ if __name__ == '__main__':
 
     # initialize lists
     ee_pose_proprioception_list = []
-    ee_in_world_pose_list = []
+    # ee_in_world_pose_list = []
     obj_apriltag_in_world_pose_list = []
     ft_sensor_in_base_frame_list = []
     adjusted_current_pose_list = []
@@ -142,8 +142,8 @@ if __name__ == '__main__':
     t_list=[]
     
     #setting up subscribers
-    ee_pose_in_world_from_camera_sub = rospy.Subscriber("/ee_pose_in_world_from_camera_publisher", 
-        PoseStamped, ee_in_world_pose_callback)    
+    # ee_pose_in_world_from_camera_sub = rospy.Subscriber("/line_ee_pose_in_world_from_camera_publisher", 
+    #     PoseStamped, ee_in_world_pose_callback)    
     obj_apriltag_pose_in_world_from_camera_sub = rospy.Subscriber("/obj_apriltag_pose_in_world_from_camera_publisher", 
         PoseStamped, obj_apriltag_in_world_pose_callback)
     ft_sensor_in_base_frame_sub = rospy.Subscriber("/ft_sensor_in_base_frame",
@@ -153,8 +153,8 @@ if __name__ == '__main__':
     while obj_apriltag_in_world_pose is None:
         print("Waiting for obj pose")
 
-    while ee_in_world_pose is None:
-        print("Waiting for ee pose")
+    # while ee_in_world_pose is None:
+    #     print("Waiting for ee pose")
 
     while ft_sensor_in_base_frame is None:
         print("Waiting for ft sensor")
@@ -162,7 +162,7 @@ if __name__ == '__main__':
 
     # set up rosbag
     rostopic_list = ["/ee_pose_in_world_from_franka_publisher",
-                     "/ee_pose_in_world_from_camera_publisher",
+                     # "/line_ee_pose_in_world_from_camera_publisher",
                      "/obj_apriltag_pose_in_world_from_camera_publisher",
                      "/ft_sensor_in_base_frame"
                      "/camera/color/image_raw"
@@ -177,19 +177,19 @@ if __name__ == '__main__':
     # original pose of robot
     current_pose = arm.endpoint_pose()
     adjusted_current_pose = copy.deepcopy(current_pose)
-    adjusted_current_pose['position'][2] -= 0.02
+    adjusted_current_pose['position'][2] -= 0.2
     base_horizontal_pose = adjusted_current_pose['position'][0]
 
     # motion schedule
-    range_amplitude = .03
+    range_amplitude = 0.04
     horizontal_pose_schedule =  np.concatenate((np.linspace(0,range_amplitude,5), 
                                 np.linspace(range_amplitude,-range_amplitude,10), 
                                 np.linspace(-range_amplitude,0,5)))
     schedule_length = horizontal_pose_schedule.shape[0]
 
-    print('first impedance commmand')
-    arm.set_cart_impedance_pose(adjusted_current_pose, 
-                    stiffness=[800, 800, 800, 10, 10, 10])        
+    # print('first impedance commmand')
+    # arm.set_cart_impedance_pose(adjusted_current_pose, 
+    #                 stiffness=[800, 800, 800, 10, 10, 10])        
 
     # intialize estimator
     weight_aggregate = 0
@@ -210,7 +210,7 @@ if __name__ == '__main__':
         t_list.append(t)
         ee_pose_proprioception=arm.endpoint_pose()
         ee_pose_proprioception_list.append(franka_pose2list(ee_pose_proprioception))
-        ee_in_world_pose_list.append(ros_helper.pose_stamped2list(ee_in_world_pose))
+        # ee_in_world_pose_list.append(ros_helper.pose_stamped2list(ee_in_world_pose))
         obj_apriltag_in_world_pose_list.append(ros_helper.pose_stamped2list(obj_apriltag_in_world_pose))
         ft_sensor_in_base_frame_list.append(ros_helper.wrench_stamped2list(ft_sensor_in_base_frame))
         adjusted_current_pose_list.append(franka_pose2list(adjusted_current_pose))
@@ -235,7 +235,7 @@ if __name__ == '__main__':
         adjusted_current_pose['position'][0] = base_horizontal_pose + \
             horizontal_pose_schedule[int(np.floor(schedule_length*t/tmax))]
         arm.set_cart_impedance_pose(adjusted_current_pose, 
-            stiffness=[800, 800, 800, 10, 10, 10]) 
+            stiffness=[1000, 600, 200, 50, 0, 50]) 
 
         rate.sleep()    
 
@@ -245,14 +245,14 @@ if __name__ == '__main__':
     ros_helper.terminate_rosbag()
 
     # unsubscribe from topics
-    ee_pose_in_world_from_camera_sub.unregister()
+    # ee_pose_in_world_from_camera_sub.unregister()
     obj_apriltag_pose_in_world_from_camera_sub.unregister()
     ft_sensor_in_base_frame_sub.unregister()
 
     # convert to numpy arrays
     t_np = np.array(t_list)
     ee_pose_proprioception_np= np.array(ee_pose_proprioception_list)
-    ee_in_world_pose_np= np.array(ee_in_world_pose_list)
+    # ee_in_world_pose_np= np.array(ee_in_world_pose_list)
     obj_apriltag_in_world_pose_np= np.array(obj_apriltag_in_world_pose_list)
     ft_sensor_in_base_frame_np= np.array(ft_sensor_in_base_frame_list)
     adjusted_current_pose_np= np.array(adjusted_current_pose_list)
@@ -262,17 +262,17 @@ if __name__ == '__main__':
     ax1 = np.ravel(ax1, order='F')
 
     ax1[0].plot(t_np, ee_pose_proprioception_np[:, 0], 'r')
-    ax1[0].plot(t_np, ee_in_world_pose_np[:, 0], 'b')
+    # ax1[0].plot(t_np, ee_in_world_pose_np[:, 0], 'b')
     ax1[0].plot(t_np, adjusted_current_pose_np[:, 0], 'g')
     ax1[0].set_ylabel('End effector X-Position [m]')
     
     ax1[1].plot(t_np, ee_pose_proprioception_np[:, 1], 'r')
-    ax1[1].plot(t_np, ee_in_world_pose_np[:, 1], 'b')
+    # ax1[1].plot(t_np, ee_in_world_pose_np[:, 1], 'b')
     ax1[1].plot(t_np, adjusted_current_pose_np[:, 1], 'g')
     ax1[1].set_ylabel('End effector Y-Position [m]')
     
     ax1[2].plot(t_np, ee_pose_proprioception_np[:, 2], 'r')
-    ax1[2].plot(t_np, ee_in_world_pose_np[:, 2], 'b')
+    # ax1[2].plot(t_np, ee_in_world_pose_np[:, 2], 'b')
     ax1[2].plot(t_np, adjusted_current_pose_np[:, 2], 'g')
     ax1[2].set_ylabel('End effector Z-Position [m]')
 

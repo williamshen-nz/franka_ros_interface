@@ -85,6 +85,16 @@ class RobotParams(object):
 
         return neutral_pose
 
+    def get_pbal_start_pose(self):
+        try:
+            pbal_start_pose = rospy.get_param("/robot_config/pbal_start_pose")
+        except KeyError:
+            rospy.logerr("RobotParam: robot_ip cannot detect pbal start pos."
+                         " under param /franka_control/pbal_start_pose")
+        except (socket.error, socket.gaierror):
+            _log_networking_error()
+
+        return pbal_start_pose
 
     def get_robot_ip(self):
         robot_ip = None

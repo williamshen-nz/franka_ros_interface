@@ -35,6 +35,15 @@ robot_config:
         panda_joint6: 1.5707963267948966  
         panda_joint7: 0.7853981633974483
 
+    pbal_start_pose:
+        panda_joint1: 0.12155150721694523
+        panda_joint2: 0.6683243880383614
+        panda_joint3: -0.035350681211438105
+        panda_joint4: -2.0931427864275483
+        panda_joint5: 1.6372828798723136
+        panda_joint6: 1.5843352882597181
+        panda_joint7: 0.3807776359368487
+
     joint_config:
         joint_acceleration_limit:
             panda_joint1: 15.0 # rad / sec^2
