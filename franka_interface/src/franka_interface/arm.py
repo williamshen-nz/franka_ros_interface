@@ -687,7 +687,7 @@ class ArmInterface(object):
             return abs(angle - self._joint_angle[joint])
         return joint_diff
 
-    def move_to_joint_positions(self, positions, timeout=10.0,
+    def move_to_joint_positions(self, positions, timeout=2.0,
                                 threshold=0.00085, test=None):
         """
         (Blocking) Commands the limb to the provided positions.
@@ -717,7 +717,9 @@ class ArmInterface(object):
         dur = []
         for j in range(len(self._joint_names)):
             dur.append(max(abs(positions[self._joint_names[j]] - self._joint_angle[self._joint_names[j]]) / self._joint_limits.velocity[j], min_traj_dur))
-        traj_client.add_point(positions = [positions[n] for n in self._joint_names], time = max(dur)/self._speed_ratio)
+        duration = max(dur)/self._speed_ratio
+        print('move_to_positions duration:', duration)
+        traj_client.add_point(positions = [positions[n] for n in self._joint_names], time=duration)
 
         diffs = [self.genf(j, a) for j, a in positions.items() if j in self._joint_angle]
 
@@ -735,11 +737,12 @@ class ArmInterface(object):
             test=lambda: test_collision() or \
                          (callable(test) and test() == True) or \
                          (all(diff() < threshold for diff in diffs)),
-            timeout=timeout,
+            timeout=max(duration, timeout),
             timeout_msg=fail_msg,
             rate=100,
             raise_on_error=False
             )
+
         res = traj_client.result()
         if res is not None and res.error_code:
             rospy.loginfo("Trajectory Server Message: {}".format(res))
@@ -747,7 +750,7 @@ class ArmInterface(object):
         rospy.sleep(0.5)
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
-    def execute_position_path(self, position_path, timeout=15.0,
+    def execute_position_path(self, position_path, timeout=5.0,
                                 threshold=0.00085, test=None):
         """
         (Blocking) Commands the limb to the provided positions.
@@ -778,15 +781,36 @@ class ArmInterface(object):
         traj_client.clear()
 
         time_so_far = 0
+        total_times = [0]
+        interval_lengths = [0]
         # Start at the second waypoint because robot is already at first waypoint
         for i in range(1, len(position_path)):
             q = position_path[i]
             dur = []
             for j in range(len(self._joint_names)):
                 dur.append(max(abs(q[self._joint_names[j]] - self._joint_angle[self._joint_names[j]]) / self._joint_limits.velocity[j], min_traj_dur))
+            interval = max(dur)/self._speed_ratio
+            interval_lengths.append(interval)
 
-            time_so_far += max(dur)/self._speed_ratio
-            traj_client.add_point(positions = [q[n] for n in self._joint_names], time = time_so_far, velocities=[0.005 for n in self._joint_names])
+            time_so_far += interval
+            total_times.append(time_so_far)
+
+        for i in range(1, len(position_path)):
+            q_t = position_path[i]
+            positions = [q_t[n] for n in self._joint_names]
+
+            if i < len(position_path)-1:
+                q_tm1 = position_path[i-1]
+                q_tp1 = position_path[i+1]
+                dt = interval_lengths[i] + interval_lengths[i+1]
+                velocities = [(q_tp1[n]-q_tm1[n])/dt for n in self._joint_names]
+                print(i, velocities)
+            else:
+                velocities = [0.005 for n in self._joint_names]
+                print(i, velocities)
+            traj_client.add_point(positions=positions,
+                                  time=total_times[i],
+                                  velocities=velocities)
 
         diffs = [self.genf(j, a) for j, a in (position_path[-1]).items() if j in self._joint_angle] # Measures diff to last waypoint
 
@@ -799,7 +823,7 @@ class ArmInterface(object):
             return False
 
         traj_client.start() # send the trajectory action request
-
+        print('execute_position_path duration:', time_so_far)
         franka_dataflow.wait_for(
             test=lambda: test_collision() or \
                          (callable(test) and test() == True) or \
@@ -809,11 +833,11 @@ class ArmInterface(object):
             rate=100,
             raise_on_error=False
             )
-
+        print('Arm Diff:', [diff() for diff in diffs])
         rospy.sleep(0.5)
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
-    def move_to_touch(self, positions, timeout=10.0, threshold=0.00085):
+    def move_to_touch(self, positions, timeout=5.0, threshold=0.00085):
         """
         (Blocking) Commands the limb to the provided positions.
 
@@ -837,11 +861,13 @@ class ArmInterface(object):
         traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
         traj_client.clear()
 
-        speed_ratio = 0.05 # Move slower when approaching contact
+        speed_ratio = 0.075 # Move slower when approaching contact
         dur = []
         for j in range(len(self._joint_names)):
             dur.append(max(abs(positions[self._joint_names[j]] - self._joint_angle[self._joint_names[j]]) / self._joint_limits.velocity[j], min_traj_dur))
-        traj_client.add_point(positions = [positions[n] for n in self._joint_names], time = max(dur)/speed_ratio, velocities=[0.002 for n in self._joint_names])
+        duration = max(dur)/speed_ratio
+        print('move_to_touch duration:', duration)
+        traj_client.add_point(positions = [positions[n] for n in self._joint_names], time=duration)#, velocities=[0.002 for n in self._joint_names])
 
         diffs = [self.genf(j, a) for j, a in positions.items() if j in self._joint_angle]
         fail_msg = "ArmInterface: {0} limb failed to reach commanded joint positions.".format(
@@ -852,7 +878,7 @@ class ArmInterface(object):
         franka_dataflow.wait_for(
             test=lambda: self.has_collided() or \
                          (all(diff() < threshold for diff in diffs)),
-            timeout=timeout,
+            timeout=max(duration, timeout),
             timeout_msg="Move to touch complete.",
             rate=100,
             raise_on_error=False
@@ -879,7 +905,7 @@ class ArmInterface(object):
         pub.publish(franka_msgs.msg.ErrorRecoveryActionGoal())
         rospy.loginfo("Collision Reflex was reset")
 
-    def move_from_touch(self, positions, timeout=10.0, threshold=0.00085):
+    def move_from_touch(self, positions, timeout=5.0, threshold=0.00085):
         """
         (Blocking) Commands the limb to the provided positions.
 
@@ -906,7 +932,12 @@ class ArmInterface(object):
         dur = []
         for j in range(len(self._joint_names)):
             dur.append(max(abs(positions[self._joint_names[j]] - self._joint_angle[self._joint_names[j]]) / self._joint_limits.velocity[j], min_traj_dur))
-        traj_client.add_point(positions = [positions[n] for n in self._joint_names], time = max(dur)/self._speed_ratio)
+
+        duration = max(dur)/self._speed_ratio
+        print('move_from_touch duration:', duration)
+        traj_client.add_point(positions = [positions[n] for n in self._joint_names], time=duration)
+
+
 
         diffs = [self.genf(j, a) for j, a in positions.items() if j in self._joint_angle]
         fail_msg = "ArmInterface: {0} limb failed to reach commanded joint positions.".format(
@@ -916,12 +947,12 @@ class ArmInterface(object):
 
         franka_dataflow.wait_for(
             test=lambda: (all(diff() < threshold for diff in diffs)),
-            timeout=timeout,
+            timeout=max(duration, timeout),
             timeout_msg="Unable to complete plan!",
             rate=100,
             raise_on_error=False
             )
-
+        print('Arm Diff:', [diff() for diff in diffs])
         rospy.sleep(0.5)
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
