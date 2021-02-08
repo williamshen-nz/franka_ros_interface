@@ -57,7 +57,6 @@ if __name__ == '__main__':
     # initialize
     generalized_velocities_list = []
     end_effector_2D_wrench_list = []
-    # end_effector_2D_wrench_list_plot_buffer = []
     friction_list = []
     friction_estimate_message = Float32()
 
@@ -68,8 +67,6 @@ if __name__ == '__main__':
     friction_estimate = 0.
     num_measurements = 0.
     update_plot_count = 300
-
-    plt.axis([0, 10, 0, 70])
 
     print("starting force collection")
     while not rospy.is_shutdown():
@@ -96,23 +93,9 @@ if __name__ == '__main__':
                 friction_estimate=(friction_measurement/num_measurements) + (
                     (num_measurements-1.)/num_measurements)*friction_estimate
 
+                # append
                 end_effector_2D_wrench_list.append(end_effector_2D_wrench)
-                end_effector_2D_wrench_list_plot_buffer.append(end_effector_2D_wrench)
                 generalized_velocities_list.append(generalized_velocities.data)
-
-                # if len(end_effector_2D_wrench_list_plot_buffer) > update_plot_count:
-
-                #     end_effector_2D_wrench_list_plot_array = np.abs(
-                #         np.array(end_effector_2D_wrench_list_plot_buffer))
-
-
-
-                #     plt.scatter(end_effector_2D_wrench_list_plot_array[:,1], 
-                #         end_effector_2D_wrench_list_plot_array[:,0])
-                #     plt.plot(np.array([0., 8.]), (1/friction_estimate)*np.array([0., 8]), 
-                #         color='r')
-                #     end_effector_2D_wrench_list_plot_buffer=[]
-                #     plt.pause(0.01)
 
         # publish and sleep
         if num_measurements > 0:

@@ -9,7 +9,7 @@ import pdb
 import ros_helper
 import franka_helper
 from franka_interface import ArmInterface 
-from geometry_msgs.msg import PointStamped, WrenchStamped
+from geometry_msgs.msg import TransformStamped, WrenchStamped, Vector3Stamped
 from std_msgs.msg import Float32MultiArray
 from visualization_msgs.msg import Marker
 import matplotlib.pyplot as plt
@@ -24,7 +24,9 @@ def get_xy_wrench_world(wrench_list):
         
 def pivot_xyz_callback(data):
     global pivot_xyz
-    pivot_xyz = data
+    pivot_xyz =  [data.transform.translation.x,
+        data.transform.translation.y,
+        data.transform.translation.z]
 
 
 if __name__ == '__main__':
@@ -39,9 +41,13 @@ if __name__ == '__main__':
     pivot_xyz, end_effector_wrench_in_base_frame = None, None
 
     # setting up subscribers
-    pivot_xyz_sub = rospy.Subscriber("/pivot_xyz", PointStamped, pivot_xyz_callback)
+    pivot_xyz_sub = rospy.Subscriber("/pivot_frame", TransformStamped, pivot_xyz_callback)
     end_effector_wrench_sub = rospy.Subscriber("/end_effector_sensor_in_base_frame", 
         WrenchStamped,  end_effector_wrench_in_end_effector_frame_callback)
+
+    # set up publisher
+    external_wrench_in_pivot_pub = rospy.Publisher('/external_wrench_in_pivot', 
+        WrenchStamped, queue_size = 10)
 
     # make sure subscribers are receiving commands
     print("Waiting for pivot estimate to stabilize")
@@ -62,7 +68,7 @@ if __name__ == '__main__':
         endpoint_pose_list = franka_helper.franka_pose2list(endpoint_pose_franka)
 
         # get vector from pivot to hand
-        pivot_xyz_array = np.array(ros_helper.point_stamped2list(pivot_xyz))
+        pivot_xyz_array = np.array(pivot_xyz)
         franka_xyz_array = endpoint_pose_franka['position']
         pivot_to_hand = franka_xyz_array - pivot_xyz_array
 
@@ -71,15 +77,16 @@ if __name__ == '__main__':
             end_effector_wrench_in_base_frame, pivot_to_hand)
 
         # pivot wrench 2D
-        pivot_wrench_2D_base = get_xy_wrench_world(ros_helper.wrench_stamped2list
+        pivot_wrench_2D_in_pivot = get_xy_wrench_world(ros_helper.wrench_stamped2list
             (pivot_wrench_base_frame))
-        print(pivot_wrench_2D_base)
 
-        # # update messages
-        # position_msg.data = ee_pos_contact_frame
-        # velocity_msg.data = ee_vel_contact_frame
+        # make Wrench Stamped
+        pivot_wrench_stamped_in_pivot = ros_helper.list2wrench_stamped([
+            pivot_wrench_2D_in_pivot[0], 0., pivot_wrench_2D_in_pivot[1], 
+            0., pivot_wrench_2D_in_pivot[2], 0.])   
+        pivot_wrench_stamped_in_pivot.header.frame_id = "pivot"
 
-        # # publish
-        # generalized_positions_pub.publish(position_msg)
-        # generalized_velocities_pub.publish(velocity_msg)
+        # publish
+        external_wrench_in_pivot_pub.publish(pivot_wrench_stamped_in_pivot)
+        
         rate.sleep()    

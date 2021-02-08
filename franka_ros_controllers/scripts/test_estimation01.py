@@ -16,9 +16,33 @@ from franka_tools import CollisionBehaviourInterface
 from visualization_msgs.msg import Marker
 
 
+def horizontal_impedance_target(current_time, duration=30.0, amplitude=0.03, ncycles=1):
+
+	if current_time > duration or current_time < 0:
+		return 0
+
+	# cycle index
+	index = (current_time/duration) * ncycles
+	cycle_percent = index - np.floor(index)
+
+	# pose target
+	if cycle_percent <=0.25:
+		horizontal_pose_target = 4.* cycle_percent
+	elif cycle_percent <=0.75:
+		horizontal_pose_target = 1 - 4.  * (cycle_percent - 0.25)
+	elif cycle_percent <=1:
+		horizontal_pose_target = -1 + 4. * (cycle_percent - 0.75)
+	else:
+		raise RuntimeError("incorrect cycle_percent")
+
+	return amplitude * horizontal_pose_target
+
 if __name__ == '__main__':
 
-    rospy.init_node("test_impedance_control01")
+    rospy.init_node("test_estimator")
+    rate = rospy.Rate(30.)
+
+    # arm interface
     arm = ArmInterface()
     rospy.sleep(0.5)
 
@@ -31,52 +55,20 @@ if __name__ == '__main__':
         force_upper=force_upper)
     rospy.sleep(1.0)
 
-    rate = rospy.Rate(30.)
-
-
     # original pose of robot
     current_pose = arm.endpoint_pose()
-    adjusted_current_pose = copy.deepcopy(current_pose)
-
+    adjusted_current_pose = copy.deepcopy(current_pose)    
     base_horizontal_pose = adjusted_current_pose['position'][0]
-    base_vertical_pose = adjusted_current_pose['position'][2] 
 
-
-   # motion schedule
-    range_amplitude = 0.04
-    horizontal_pose_schedule =  np.concatenate((np.linspace(0,range_amplitude,5), 
-                                np.linspace(range_amplitude,-range_amplitude,10), 
-                                np.linspace(-range_amplitude,range_amplitude,10),
-                                np.linspace(range_amplitude,-range_amplitude,10), 
-                                np.linspace(-range_amplitude,range_amplitude,10),
-                                np.linspace(range_amplitude,-range_amplitude,10), 
-                                np.linspace(-range_amplitude,range_amplitude,10),
-                                np.linspace(range_amplitude,-range_amplitude,10), 
-                                np.linspace(-range_amplitude,range_amplitude,10),
-                                np.linspace(range_amplitude,-range_amplitude,10), 
-                                np.linspace(-range_amplitude,range_amplitude,10),                                 
-                                np.linspace(range_amplitude,-range_amplitude,10),                                
-                                np.linspace(-range_amplitude,0,5)))
-
-    vertical_range_amplitude = 0.20
-    vertical_pose_schedule = np.concatenate((1.*vertical_range_amplitude*np.ones(5), 
-                                .95*vertical_range_amplitude*np.ones(10),
-                                .9*vertical_range_amplitude*np.ones(10), 
-                                .85*vertical_range_amplitude*np.ones(10), 
-                                .8*vertical_range_amplitude*np.ones(10), 
-                                .75*vertical_range_amplitude*np.ones(10), 
-                                .7*vertical_range_amplitude*np.ones(10), 
-                                .65*vertical_range_amplitude*np.ones(10), 
-                                .6*vertical_range_amplitude*np.ones(10),  
-                                .55*vertical_range_amplitude*np.ones(10), 
-                                .6*vertical_range_amplitude*np.ones(10), 
-                                .65*vertical_range_amplitude*np.ones(10),                                
-                                .7*vertical_range_amplitude*np.ones(5)))
-    schedule_length = horizontal_pose_schedule.shape[0]
+    # vertical pose
+    base_vertical_pose = adjusted_current_pose['position'][2]
 
     # start loop
     start_time = rospy.Time.now().to_sec()
-    tmax=60.0
+    tmax=20.0
+
+    # lists
+    horizontal_pose_target_list = []
 
     print('starting control loop')
     while not rospy.is_shutdown():
@@ -89,19 +81,22 @@ if __name__ == '__main__':
             break
 
         # move to next position on schedule
-        adjusted_current_pose['position'][0] = base_horizontal_pose + \
-            horizontal_pose_schedule[int(np.floor(schedule_length*t/tmax))]
-
-        adjusted_current_pose['position'][2] = base_vertical_pose - \
-            vertical_pose_schedule[int(np.floor(schedule_length*t/tmax))]
-
+       	horizontal_pose_target = horizontal_impedance_target(t,
+       		duration=tmax, ncycles=5)
+        adjusted_current_pose['position'][0] = base_horizontal_pose + horizontal_pose_target
+        adjusted_current_pose['position'][2] = base_vertical_pose - 0.2
         arm.set_cart_impedance_pose(adjusted_current_pose, 
             stiffness=[1200, 600, 200, 100, 0, 100]) 
+
+        horizontal_pose_target_list.append(horizontal_pose_target)
 
         rate.sleep()    
 
     print('control loop completed')
 
+    # fig, axs = plt.subplots(1,1)
+    # axs.plot(np.array(horizontal_pose_target_list))
+    # plt.show()
     # # terminate rosbags
     # ros_helper.terminate_rosbag()
 
@@ -176,3 +171,11 @@ if __name__ == '__main__':
     # plt.show()
 
 
+
+
+
+    # fig, axs = plt.subplots(1,1)
+    # axs.scatter(np.array(robot_orientation_list), 
+    #     np.array(gravitational_torque_list))
+    # axs.plot(np.array([-0.6, 0.6]), mgl*(np.array([-0.6, 0.6]) - theta0))
+    # plt.show()

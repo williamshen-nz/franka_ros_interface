@@ -4,12 +4,13 @@
 
 import numpy as np
 import tf.transformations as tfm
+import tf2_ros
 import rospy
 
 import ros_helper
 import franka_helper
 from franka_interface import ArmInterface 
-from geometry_msgs.msg import PointStamped
+from geometry_msgs.msg import TransformStamped
 from visualization_msgs.msg import Marker
 
 def initialize_marker():
@@ -26,6 +27,27 @@ def initialize_marker():
     marker_message.color.b=0
     marker_message.lifetime.secs=1.0
     return marker_message
+
+def initialize_frame():
+    frame_message = TransformStamped()
+    frame_message.header.frame_id = "base"
+    frame_message.header.stamp = rospy.Time.now()
+    frame_message.child_frame_id = "pivot"
+    frame_message.transform.translation.x = 0.0
+    frame_message.transform.translation.y = 0.0
+    frame_message.transform.translation.z = 0.0
+
+    frame_message.transform.rotation.x = 0.0
+    frame_message.transform.rotation.y = 0.0
+    frame_message.transform.rotation.z = 0.0
+    frame_message.transform.rotation.w = 1.0
+    return frame_message
+
+def update_frame_translation(frame_origin, frame_message):
+    frame_message.header.stamp = rospy.Time.now()
+    frame_message.transform.translation.x = frame_origin[0]
+    frame_message.transform.translation.y = frame_origin[1]
+    frame_message.transform.translation.z = frame_origin[2]
 
 def update_marker_pose(marker_pose, marker_message):
     marker_message.header.stamp = marker_pose.header.stamp
@@ -86,23 +108,29 @@ if __name__ == '__main__':
     endpoint_pose_all = []
 
     # set up pivot Point publisher
-    pivot_xyz_pub = rospy.Publisher('/pivot_xyz', PointStamped, queue_size=10)      
+    frame_message = initialize_frame()
+    pivot_xyz_pub = rospy.Publisher('/pivot_frame', TransformStamped, queue_size=10)      
 
     # set up pivot marker publisher
     marker_message = initialize_marker()
-    pivot_marker_pub = rospy.Publisher('/pivot_marker', Marker, queue_size=10)      
+    pivot_marker_pub = rospy.Publisher('/pivot_marker', Marker, queue_size=10)  
+
+    # set up transform broadcaster
+    pivot_frame_broadcaster = tf2_ros.TransformBroadcaster()   
 
     # intialize pivot estimate
     current_pose = arm.endpoint_pose()      # original pose of robot
     x0=None
     z0=None
+    pivot_xyz=None
+    pivot_pose=None
 
     # hyper parameters
     Nbatch = 250             # max number of datapoints for estimation
-    update_length = 50       # number of good points before update/publish
+    update_length = 200       # number of good points before update/publish
     diff_threshold = 0.001   # threshold for new datapoints
 
-    print('starting estimation loop')
+    print('starting pivot estimation loop')
     while not rospy.is_shutdown():
 
         # face_center franka pose
@@ -143,14 +171,18 @@ if __name__ == '__main__':
 
                 # update center of rotation estimate
                 x0, z0 = update_center_of_rotation_estimate(endpoint_pose_all)
+                pivot_xyz = [x0,endpoint_pose_all[-1][1],z0]
 
                 # update maker for center of rotation
-                pivot_pose = ros_helper.list2pose_stamped([x0,endpoint_pose_all[-1][1],z0,0,0,0,1])
-                update_marker_pose(pivot_pose, marker_message)
+                pivot_pose = ros_helper.list2pose_stamped(pivot_xyz + [0,0,0,1])
+
 
         # only publish after estimate has settled
         if len(endpoint_pose_all) > update_length:
-            pivot_xyz_pub.publish(ros_helper.list2point_stamped([x0, endpoint_pose_all[-1][1], z0]))
+            update_frame_translation(pivot_xyz, frame_message)
+            update_marker_pose(pivot_pose, marker_message)
+            pivot_xyz_pub.publish(frame_message)
+            pivot_frame_broadcaster.sendTransform(frame_message)
             pivot_marker_pub.publish(marker_message)
         
         rate.sleep()    

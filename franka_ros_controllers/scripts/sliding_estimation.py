@@ -9,7 +9,7 @@ import pdb
 import ros_helper
 import franka_helper
 from franka_interface import ArmInterface 
-from geometry_msgs.msg import PointStamped
+from geometry_msgs.msg import TransformStamped
 from std_msgs.msg import Float32MultiArray
 from visualization_msgs.msg import Marker
 import matplotlib.pyplot as plt
@@ -44,16 +44,17 @@ def update_sliding_velocity(x0, z0, contact_pose, contact_vel):
     ee_vel_contact_frame = np.linalg.solve(velocity_jacobian, 
     	np.array([contact_vel[0], contact_vel[2], theta_dot]))
 
-    # find nomral and tangential displacment
+    # find normal and tangential displacment
     s = e_t2D[0]*xc + e_t2D[1]*zc 
     d = e_n2D[0]*xc + e_n2D[1]*zc 
 
-    return ee_vel_contact_frame, np.array([d, s, contact_pose[-1]])
+    return ee_vel_contact_frame, np.array([d, s])
         
 def pivot_xyz_callback(data):
     global pivot_xyz
-    pivot_xyz = data
-
+    pivot_xyz =  [data.transform.translation.x,
+        data.transform.translation.y,
+        data.transform.translation.z]
 
 if __name__ == '__main__':
 
@@ -67,7 +68,7 @@ if __name__ == '__main__':
     pivot_xyz = None
 
     # setting up subscribers
-    pivot_xyz_sub = rospy.Subscriber("/pivot_xyz", PointStamped, pivot_xyz_callback)
+    pivot_xyz_sub = rospy.Subscriber("/pivot_frame", TransformStamped, pivot_xyz_callback)
 
     # setting up publishers
     generalized_positions_pub = rospy.Publisher('/generalized_positions', 
@@ -100,8 +101,8 @@ if __name__ == '__main__':
             endpoint_velocity) 
 
         # update sliding velocity
-        ee_vel_contact_frame, ee_pos_contact_frame = update_sliding_velocity(pivot_xyz.point.x, 
-            pivot_xyz.point.z, endpoint_pose_list, endpoint_velocity_list)
+        ee_vel_contact_frame, ee_pos_contact_frame = update_sliding_velocity(pivot_xyz[0],
+            pivot_xyz[2], endpoint_pose_list, endpoint_velocity_list)
 
         # update messages
         position_msg.data = ee_pos_contact_frame
