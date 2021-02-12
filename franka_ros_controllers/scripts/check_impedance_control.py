@@ -3,22 +3,29 @@
 # this is to find out the transform between the webcam frame and robot frame
 import numpy as np
 import tf.transformations as tfm
+import tf2_ros
 import rospy
 import copy
-import pdb
 import matplotlib.pyplot as plt
+import pdb
 
-
-import ros_helper
+import ros_helper, franka_helper
 from franka_interface import ArmInterface 
-from geometry_msgs.msg import PoseStamped, WrenchStamped
+from geometry_msgs.msg import TransformStamped, PoseStamped, WrenchStamped
+from std_msgs.msg import Float32MultiArray, Float32
 from franka_tools import CollisionBehaviourInterface
-from visualization_msgs.msg import Marker
 
+
+def end_effector_wrench_callback(data):
+    global end_effector_wrench
+    end_effector_wrench = data
 
 if __name__ == '__main__':
 
-    rospy.init_node("test_impedance_control01")
+    rospy.init_node("impedance_control_test")
+    rate = rospy.Rate(30.)
+
+    # arm interface
     arm = ArmInterface()
     rospy.sleep(0.5)
 
@@ -31,9 +38,17 @@ if __name__ == '__main__':
         force_upper=force_upper)
     rospy.sleep(1.0)
 
-    rate = rospy.Rate(30.)
+    end_effector_wrench = None
 
+    # subscribers
+    end_effector_wrench_sub = rospy.Subscriber("/end_effector_sensor_in_base_frame", 
+        WrenchStamped,  end_effector_wrench_callback)
 
+    # make sure subscribers are receiving commands
+    print("Waiting for end effector wrench")
+    while end_effector_wrench is None:
+        rospy.sleep(0.1)
+    
     # original pose of robot
     current_pose = arm.endpoint_pose()
     adjusted_current_pose = copy.deepcopy(current_pose)
@@ -43,11 +58,13 @@ if __name__ == '__main__':
 
 
    # motion schedule
-    range_amplitude = 0.04
-    horizontal_pose_schedule =  np.concatenate((np.linspace(0,range_amplitude,5), 
-                                np.linspace(range_amplitude,-range_amplitude,10), 
-                                np.linspace(-range_amplitude,range_amplitude,10),
-                                np.linspace(range_amplitude,-range_amplitude,10), 
+    stiffness = [1200., 600., 400., 100., 30., 100.]
+    range_amplitude = 0.03
+    resolution = 100
+    horizontal_pose_schedule =  np.concatenate((np.linspace(0,range_amplitude,resolution*5), 
+                                np.linspace(range_amplitude,-range_amplitude,resolution*10), 
+                                np.linspace(-range_amplitude,range_amplitude,resolution*10),
+                                np.linspace(range_amplitude,-range_amplitude,resolution*10), 
                                 # np.linspace(-range_amplitude,range_amplitude,10),
                                 # np.linspace(range_amplitude,-range_amplitude,10), 
                                 # np.linspace(-range_amplitude,range_amplitude,10),
@@ -56,13 +73,15 @@ if __name__ == '__main__':
                                 # np.linspace(range_amplitude,-range_amplitude,10), 
                                 # np.linspace(-range_amplitude,range_amplitude,10),                                 
                                 # np.linspace(range_amplitude,-range_amplitude,10),                                
-                                np.linspace(-range_amplitude,0,5)))
+                                np.linspace(-range_amplitude,0,resolution*5)))
 
-    vertical_range_amplitude = 0.20
-    vertical_pose_schedule = np.concatenate((1.*vertical_range_amplitude*np.ones(5), 
-                                1.*vertical_range_amplitude*np.ones(10),
-                                1.*vertical_range_amplitude*np.ones(10), 
-                                1.*vertical_range_amplitude*np.ones(10), 
+
+    vertical_range_amplitude = 0.10
+    vertical_pose_schedule = np.concatenate((
+            np.linspace(1.*vertical_range_amplitude,.8*vertical_range_amplitude,resolution*5), 
+            np.linspace(.8*vertical_range_amplitude,.6*vertical_range_amplitude,resolution*10),
+            np.linspace(.6*vertical_range_amplitude,.8*vertical_range_amplitude,resolution*10),
+            np.linspace(.8*vertical_range_amplitude,1*vertical_range_amplitude,resolution*10),
                                 # 1.*vertical_range_amplitude*np.ones(10), 
                                 # .75*vertical_range_amplitude*np.ones(10), 
                                 # .7*vertical_range_amplitude*np.ones(10), 
@@ -71,12 +90,17 @@ if __name__ == '__main__':
                                 # .55*vertical_range_amplitude*np.ones(10), 
                                 # .6*vertical_range_amplitude*np.ones(10), 
                                 # .65*vertical_range_amplitude*np.ones(10),                                
-                                1.*vertical_range_amplitude*np.ones(5)))
+            np.linspace(1.*vertical_range_amplitude,1.2*vertical_range_amplitude,resolution*5)))
     schedule_length = horizontal_pose_schedule.shape[0]
 
     # start loop
     start_time = rospy.Time.now().to_sec()
-    tmax=10.0
+    tmax=120.0
+
+    #lists
+    robot_pose_list = []
+    end_effector_wrench_list = []
+    impedance_target_list = []
 
     print('starting control loop')
     while not rospy.is_shutdown():
@@ -96,27 +120,44 @@ if __name__ == '__main__':
             vertical_pose_schedule[int(np.floor(schedule_length*t/tmax))]
 
         arm.set_cart_impedance_pose(adjusted_current_pose, 
-            stiffness=[1200, 600, 200, 100, 0, 100]) 
+            stiffness=stiffness)
 
-        rate.sleep()    
+        endpoint_franka_pose = arm.endpoint_pose()
+        endpoint_franka_list = franka_helper.franka_pose2list(arm.endpoint_pose())
+        endpoint_franka_rpy_list = endpoint_franka_list[:3] + list(
+            tfm.euler_from_quaternion(endpoint_franka_list[3:]))
+
+        adujsted_current_pose_list = franka_helper.franka_pose2list(adjusted_current_pose)
+        adujsted_current_rpy_list = adujsted_current_pose_list[:3] + list(
+            tfm.euler_from_quaternion(adujsted_current_pose_list[3:]))
+
+        robot_pose_list.append(endpoint_franka_rpy_list)
+        end_effector_wrench_list.append(ros_helper.wrench_stamped2list(
+            end_effector_wrench))
+        impedance_target_list.append(adujsted_current_rpy_list)
+
+        rate.sleep()
+
 
     print('control loop completed')
+    
 
-    # # terminate rosbags
-    # ros_helper.terminate_rosbag()
+    # convert to numpy arrays
+    robot_pose_array = np.array(robot_pose_list)
+    end_effector_wrench_array = np.array(end_effector_wrench_list)
+    impedance_target_array = np.array(impedance_target_list)
 
-    # # unsubscribe from topics
-    # # ee_pose_in_world_from_camera_sub.unregister()
-    # obj_apriltag_pose_in_world_from_camera_sub.unregister()
-    # ft_sensor_in_base_frame_sub.unregister()
+    fig, axs = plt.subplots(3,1)
+    axs[0].plot(-end_effector_wrench_array[:, 0])
+    axs[0].plot(stiffness[0] * (impedance_target_array[:, 0] - robot_pose_array[:, 0]))
 
-    # # convert to numpy arrays
-    # t_np = np.array(t_list)
-    # ee_pose_proprioception_np= np.array(ee_pose_proprioception_list)
-    # # ee_in_world_pose_np= np.array(ee_in_world_pose_list)
-    # obj_apriltag_in_world_pose_np= np.array(obj_apriltag_in_world_pose_list)
-    # ft_sensor_in_base_frame_np= np.array(ft_sensor_in_base_frame_list)
-    # adjusted_current_pose_np= np.array(adjusted_current_pose_list)
+    axs[1].plot(-end_effector_wrench_array[:, 2])
+    axs[1].plot(stiffness[2] * (impedance_target_array[:, 2] - robot_pose_array[:, 2]))
+
+    axs[2].plot(-end_effector_wrench_array[:, -2])
+    axs[2].plot(stiffness[-2] * (impedance_target_array[:, -2] - robot_pose_array[:, -2]))
+
+    plt.show()
 
     # # plotting end effector position
     # fig1, ax1 = plt.subplots(3, 1, figsize=(8,5))
@@ -176,3 +217,11 @@ if __name__ == '__main__':
     # plt.show()
 
 
+
+
+
+    # fig, axs = plt.subplots(1,1)
+    # axs.scatter(np.array(robot_orientation_list), 
+    #     np.array(gravitational_torque_list))
+    # axs.plot(np.array([-0.6, 0.6]), mgl*(np.array([-0.6, 0.6]) - theta0))
+    # plt.show()

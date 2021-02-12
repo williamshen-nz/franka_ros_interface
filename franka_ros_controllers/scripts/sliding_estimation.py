@@ -15,6 +15,12 @@ from visualization_msgs.msg import Marker
 import matplotlib.pyplot as plt
 
 
+def get_hand_orientation_in_base(contact_pose_homog):
+    # current orientation
+    hand_normal_x = contact_pose_homog[0,0]
+    hand_normal_z = contact_pose_homog[2,0]
+    return -np.arctan2(hand_normal_x, -hand_normal_z)
+
 def update_sliding_velocity(x0, z0, contact_pose, contact_vel):
 
     contact_pose_stamped = ros_helper.list2pose_stamped(contact_pose)
@@ -48,7 +54,10 @@ def update_sliding_velocity(x0, z0, contact_pose, contact_vel):
     s = e_t2D[0]*xc + e_t2D[1]*zc 
     d = e_n2D[0]*xc + e_n2D[1]*zc 
 
-    return ee_vel_contact_frame, np.array([d, s])
+    # find angle
+    tht = get_hand_orientation_in_base(contact_pose_homog)
+
+    return ee_vel_contact_frame, np.array([d, s, tht])
         
 def pivot_xyz_callback(data):
     global pivot_xyz

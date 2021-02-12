@@ -33,7 +33,6 @@ def face_contact_center_pose(arm_pose):
     return face_contact_center_pose_in_base_frame
 
 
-
 if __name__ == '__main__':
 
     #1. initialize node

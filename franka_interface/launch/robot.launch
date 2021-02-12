@@ -63,10 +63,6 @@
 
   <node pkg="tf" type="static_transform_publisher" name="base_to_link0" args="0 0 0 0 0 0 1 base panda_link0 100" />          <node pkg="tf" type="static_transform_publisher" name="world_to_base" args="0 0 0 0 0 0 1 world base 100" />                     
 
-  <!-- Calibration for realsense camera  -->        
-  <!-- <node pkg="tf" type="static_transform_publisher" name="world_to_camera" args=" 5.30393159e-01 6.54372181e-01 1.46705154e-01 3.92307847e-03 -6.95522764e-01 7.18473093e-01 -5.39526746e-03 base /camera_color_optical_frame 100" /> -->
-  <node pkg="tf" type="static_transform_publisher" name="world_to_camera" args=" 5.40393159e-01 6.54372181e-01 1.46705154e-01 3.92307847e-03 -6.95522764e-01 7.18473093e-01 -5.39526746e-03 base /camera_color_optical_frame 100" />
-
 
 </launch>
 

@@ -6,10 +6,12 @@ import tf.transformations as tfm
 import rospy
 import copy
 import pdb;
+import tf
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 from math import sqrt
+import ros_helper, franka_helper
 from franka_interface import ArmInterface 
 from apriltag_ros.msg import AprilTagDetectionArray
 
@@ -88,6 +90,9 @@ if __name__ == '__main__':
     arm = ArmInterface()
     rospy.sleep(0.5)
 
+    # Make listener
+    listener = tf.TransformListener()
+
 
     # limits
     xlim = [0.4, 0.6]
@@ -99,6 +104,12 @@ if __name__ == '__main__':
 
     # original pose
     pose0 = arm.endpoint_pose()
+
+    # transform from endpoint to apriltag
+    (apriltag_in_panda_hand_pos, apriltag_in_panda_hand_rot) = ros_helper.lookupTransform(
+        '/ee_apriltag_in_world', '/panda_hand_from_camera', listener)
+    apriltag_pose_in_panda_hand = ros_helper.list2pose_stamped(apriltag_in_panda_hand_pos + 
+        apriltag_in_panda_hand_rot, frame_id="/panda_hand_from_camera")
 
     xr = []
     yr = []
@@ -130,11 +141,15 @@ if __name__ == '__main__':
                     continue
 
                 # get arm position
-                arm_xyz_list = endpoint_xyz(arm)
+                endpoint_pose_list = franka_helper.franka_pose2list(arm.endpoint_pose())
+                endpoint_pose_stamped = ros_helper.list2pose_stamped(endpoint_pose_list)
+                ee_apriltag_pose_stamped = ros_helper.convert_reference_frame(apriltag_pose_in_panda_hand,
+                    ros_helper.unit_pose(), endpoint_pose_stamped, frame_id = "base")
+                apriltag_xyz_from_robot = ros_helper.pose_stamped2list(ee_apriltag_pose_stamped)[:3]
 
-                xr = xr + [arm_xyz_list[0]]
-                yr = yr + [arm_xyz_list[1]]
-                zr = zr + [arm_xyz_list[2]]
+                xr = xr + [apriltag_xyz_from_robot[0]]
+                yr = yr + [apriltag_xyz_from_robot[1]]
+                zr = zr + [apriltag_xyz_from_robot[2]]
 
                 xat = xat + [apriltag_xyz_list[0]]
                 yat = yat + [apriltag_xyz_list[1]]

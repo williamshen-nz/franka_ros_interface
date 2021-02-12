@@ -10,22 +10,16 @@ import matplotlib.pyplot as plt
 import ros_helper, franka_helper
 from franka_interface import ArmInterface 
 from geometry_msgs.msg import WrenchStamped
-from std_msgs.msg import Float32
+from std_msgs.msg import Float32MultiArray, Float32
 
 
 def external_wrench_callback(data):
     global external_wrench
     external_wrench = data
 
-def get_hand_orientation_in_base():
-    # current orientation
-    endpoint_pose_list = franka_helper.franka_pose2list(arm.endpoint_pose())
-    endpoint_pose_stamped = ros_helper.list2pose_stamped(endpoint_pose_list)
-    endpoint_homog_trans = ros_helper.matrix_from_pose(endpoint_pose_stamped)
-    hand_normal_x = endpoint_homog_trans[0,0]
-    hand_normal_z = endpoint_homog_trans[2,0]
-    return -np.arctan2(hand_normal_x, -hand_normal_z)
-
+def hand_orientation_callback(data):
+    global robot_angle
+    robot_angle = data.data[-1]
 
 def update_gravity_params(theta_list, moment_list):
 
@@ -55,11 +49,14 @@ if __name__ == '__main__':
     rospy.sleep(0.5)
 
     # globals
-    external_wrench = None
+    external_wrench, robot_angle = None, None
 
     # set up subscribers
     external_force_sub = rospy.Subscriber("/external_wrench_in_pivot", 
         WrenchStamped,  external_wrench_callback)
+
+    generalized_positions_sub = rospy.Subscriber("/generalized_positions", 
+        Float32MultiArray,  hand_orientation_callback)
 
     # set up publishers
     com_ray_pub = rospy.Publisher('/com_ray', Float32, queue_size=10)
@@ -70,6 +67,11 @@ if __name__ == '__main__':
     # wait
     print("Waiting for external wrench")
     while external_wrench is None:
+        pass
+
+    # wait
+    print("Waiting for robot angle ")
+    while robot_angle is None:
         pass
 
     # initialize estimates
@@ -95,7 +97,6 @@ if __name__ == '__main__':
     while not rospy.is_shutdown():
 
         # get hand orientation
-        robot_angle = get_hand_orientation_in_base()
         external_wrench_list = ros_helper.wrench_stamped2list(external_wrench)
 
         # update min and max angle
@@ -146,3 +147,12 @@ if __name__ == '__main__':
             grav_params_vis_pub.publish(grav_params_vis_msg)
 
         rate.sleep()    
+
+
+    #         # current orientation
+    # endpoint_pose_list = franka_helper.franka_pose2list(arm.endpoint_pose())
+    # endpoint_pose_stamped = ros_helper.list2pose_stamped(endpoint_pose_list)
+    # endpoint_homog_trans = ros_helper.matrix_from_pose(endpoint_pose_stamped)
+    # hand_normal_x = endpoint_homog_trans[0,0]
+    # hand_normal_z = endpoint_homog_trans[2,0]
+    # return -np.arctan2(hand_normal_x, -hand_normal_z)
