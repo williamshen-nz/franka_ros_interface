@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 import pdb
 
 class PbalPhysics(object):
@@ -60,9 +61,7 @@ class PbalPhysics(object):
 
         # robot pose
         robot_pose = self.forward_kin(contact_pose)
-        
-        pdb.set_trace()
-
+    
         # wrench in robot frame
         impedance_wrench_robot = self.impedance_model_robot(robot_pose)
 
@@ -74,8 +73,8 @@ class PbalPhysics(object):
 
     def torque_balance(self, contact_pose, contact_wrench):
 
-        s, d, theta = contact_pose[0], contact_pose[1], contact_pose[2]
-        Fs, Fd, tau = contact_wrench[0], contact_wrench[1], contact_wrench[2]
+        d, s, theta = contact_pose[0], contact_pose[1], contact_pose[2]
+        Fd, Fs, tau = contact_wrench[0], contact_wrench[1], contact_wrench[2]
 
         return (
             self.mgl*np.sin(theta - self.theta0)
@@ -89,18 +88,16 @@ class PbalPhysics(object):
         # contact wrench based on controller
         contact_wrench = self.impedance_model_contact(contact_pose)
 
-        pdb.set_trace()
-
         # net torque
         return self.torque_balance(contact_pose, contact_wrench)
 
-    def find_equilibrium_angle(self, s, d, theta_guess):
+    def find_equilibrium_angle(self, d, s, theta_guess):
 
         # params
         TOL, DTHETA = 1e-6, 1e-4
 
         # pack
-        guess_pose = np.array([s, d, theta_guess])
+        guess_pose = np.array([d, s, theta_guess])
 
         # check if at equilbrium
         net_torque = self.equilibrium_check(guess_pose)
@@ -117,12 +114,51 @@ class PbalPhysics(object):
 
             # new guess
             theta_guess = theta_guess - net_torque / dnt_dtheta
-            pdb.set_trace()
             print(theta_guess)
             guess_pose[-1] = theta_guess
 
         return theta_guess
 
+    def plot_state(self, robot_pose, ax):
+
+        AXIS_LENGTH = 0.2
+
+        # robot x-axis
+        ax.plot(self.pivot[0] + np.array([0, AXIS_LENGTH]),
+            self.pivot[1] + np.array([0, 0]), 'r' ,linewidth=3)
+        # robot z-axis
+        ax.plot(self.pivot[0] + np.array([0, 0]),
+            self.pivot[1] + np.array([0, AXIS_LENGTH]), 'b',linewidth=3)
+        # plot pivot
+        ax.plot(self.pivot[0], self.pivot[1], 'k.', markersize=10)
+
+        contact2robot = self.contact2robot(robot_pose)
+
+        # contact x-axis
+        ax.plot(robot_pose[0] + np.array([0, AXIS_LENGTH * contact2robot[0, 0]]),
+            robot_pose[1] + np.array([0, AXIS_LENGTH*contact2robot[0, 1]]), 'r' ,linewidth=3)
+        # contact y-axis
+        ax.plot(robot_pose[0] + np.array([0, AXIS_LENGTH * contact2robot[1, 0]]),
+            robot_pose[1] + np.array([0, AXIS_LENGTH*contact2robot[1, 1]]), 'g' ,linewidth=3)
+        # contact point
+        ax.plot(robot_pose[0], robot_pose[1], 'k.', markersize=10)
+
+        # plot in contact axes
+        contact_pose = self.inverse_kin(robot_pose)
+        # pivot to project point
+        projection_point = self.pivot + contact_pose[0] * contact2robot[:2, 0]
+        ax.plot(np.array([self.pivot[0], projection_point[0]]),
+            np.array([self.pivot[1], projection_point[1]]), 'k', linewidth=1)
+        # projection to contact
+        contact_point = projection_point + contact_pose[1]*contact2robot[:2, 1]
+        ax.plot(np.array([projection_point[0], contact_point[0]]),
+            np.array([projection_point[1], contact_point[1]]), 'k', linewidth=1)
+            
+        robotpose_2 = self.forward_kin(contact_pose)
+        print(robot_pose - robotpose_2)
+
+            
+        
 
 if __name__ == "__main__":
 
@@ -130,22 +166,26 @@ if __name__ == "__main__":
 
     # object parameters
     param_dict['pivot'] = np.array([0.,0.])
-    param_dict['mgl'] = 1.
+    param_dict['mgl'] = 0.
     param_dict['theta0'] = 0.
     param_dict['mu_contact'] = 0.15
     param_dict['l_contact'] = 0.1
 
     # impedance parameters
-    param_dict['impedance_target'] = np.array([0, 0.9, 0])
+    param_dict['impedance_target'] = np.array([0.0, 0.9, 0])
     param_dict['impedance_stiffness'] = np.array([1e3, 0.2e3, 30])
 
     # create obj
-    pbal_obj=PbalPhysics(param_dict)
-    theta_eq = pbal_obj.find_equilibrium_angle(0, 1, 0)
-    
+    pbal_obj = PbalPhysics(param_dict)
+    contact_pose = np.array([-1, 0, 0.1])
 
+    theta_eq = pbal_obj.find_equilibrium_angle(*contact_pose)
 
-
+    fig, ax = plt.subplots(1,1)
+    ax.invert_xaxis()    
+    pbal_obj.plot_state(pbal_obj.forward_kin(contact_pose), ax)
+    ax.axis('equal')
+    plt.show()
     
 
 
