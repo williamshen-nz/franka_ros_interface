@@ -1,6 +1,9 @@
+import copy
 import numpy as np
 import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import pdb
+
 
 class PbalPhysics(object):
     def __init__(self, param_dict):
@@ -17,7 +20,7 @@ class PbalPhysics(object):
         self.impedance_stiffness = param_dict['impedance_stiffness']
 
     def contact2robot(self, contact_pose):
-        
+
         # unpack
         theta = contact_pose[2]
 
@@ -25,8 +28,7 @@ class PbalPhysics(object):
         sint, cost = np.sin(theta), np.cos(theta)
 
         # line contact orientation in world frame
-        return np.array([[-sint, -cost, 0], 
-            [-cost, sint, 0], [0., 0., 1.]])
+        return np.array([[-sint, -cost, 0], [-cost, sint, 0], [0., 0., 1.]])
 
     def forward_kin(self, contact_pose):
 
@@ -34,8 +36,8 @@ class PbalPhysics(object):
         contact2robot = self.contact2robot(contact_pose)
 
         # equivalent coordinates in robot frame
-        robot_pose = np.append(self.pivot, 0.
-            ) + np.dot(contact2robot, contact_pose)
+        robot_pose = np.append(self.pivot, 0.) + np.dot(
+            contact2robot, contact_pose)
 
         return robot_pose
 
@@ -45,23 +47,22 @@ class PbalPhysics(object):
         robot2contact = self.contact2robot(robot_pose).T
 
         # equivalent coordinates in robot frame
-        robot_pose = np.dot(robot2contact, robot_pose - np.append(
-            self.pivot, 0.))
+        robot_pose = np.dot(robot2contact,
+                            robot_pose - np.append(self.pivot, 0.))
 
         return robot_pose
 
     def impedance_model_robot(self, robot_pose):
 
-        # target minus current
-        delta_pose = self.impedance_target - robot_pose
-
+        # current minus target
+        delta_pose = robot_pose - self.impedance_target
         return -self.impedance_stiffness * delta_pose
-        
+
     def impedance_model_contact(self, contact_pose):
 
         # robot pose
         robot_pose = self.forward_kin(contact_pose)
-    
+
         # wrench in robot frame
         impedance_wrench_robot = self.impedance_model_robot(robot_pose)
 
@@ -69,19 +70,14 @@ class PbalPhysics(object):
         robot2contact = self.contact2robot(contact_pose).T
 
         # wrench in contact frame
-        return np.dot(robot2contact, impedance_wrench_robot) 
+        return np.dot(robot2contact, impedance_wrench_robot)
 
     def torque_balance(self, contact_pose, contact_wrench):
 
         d, s, theta = contact_pose[0], contact_pose[1], contact_pose[2]
         Fd, Fs, tau = contact_wrench[0], contact_wrench[1], contact_wrench[2]
 
-        return (
-            self.mgl*np.sin(theta - self.theta0)
-            + Fs * d
-            - Fd * s
-            + tau        
-        )
+        return (self.mgl * np.sin(theta - self.theta0) + Fs * d - Fd * s + tau)
 
     def equilibrium_check(self, contact_pose):
 
@@ -90,6 +86,36 @@ class PbalPhysics(object):
 
         # net torque
         return self.torque_balance(contact_pose, contact_wrench)
+
+    def frictionless_equilbrium_check(self, contact_pose):
+        
+        contact_wrench = self.impedance_model_contact(contact_pose)
+        net_torque = self.torque_balance(contact_pose, contact_wrench)
+
+        return np.array([net_torque, contact_wrench[1]])
+
+    def wrench_cone_check_contact(self, contact_wrench):
+
+        Fd, Fs, tau = contact_wrench[0], contact_wrench[1], contact_wrench[2]
+
+        # constraints statisfied if cvec > 0
+        cvec = np.array([
+            Fs + self.mu_contact * Fd, -Fs + self.mu_contact * Fd,
+            tau + 0.5 * self.l_contact * Fd, -tau + 0.5 * self.l_contact * Fd
+        ])
+
+        return np.all(cvec > 0), cvec
+    
+    def wrench_cone_check_with_imepedance_contact(self, contact_pose):
+
+        contact_wrench = self.impedance_model_contact(contact_pose)
+        # print(contact_wrench)
+        return self.wrench_cone_check_contact(contact_wrench)
+
+    def wrench_cone_check_with_imepedance_robot(self, robot_pose):
+
+        contact_pose = self.inverse_kin(robot_pose)
+        return self.wrench_cone_check_with_imepedance_contact(contact_pose)
 
     def find_equilibrium_angle(self, d, s, theta_guess):
 
@@ -106,86 +132,373 @@ class PbalPhysics(object):
 
             # gradient
             ntp = self.equilibrium_check(guess_pose + np.array([0, 0, DTHETA]))
-            ntm = self.equilibrium_check(guess_pose + np.array([0, 0, -DTHETA]))
+            ntm = self.equilibrium_check(guess_pose +
+                                         np.array([0, 0, -DTHETA]))
             dnt_dtheta = (ntp - ntm) / (2 * DTHETA)
-            
+
             # current value
             net_torque = self.equilibrium_check(guess_pose)
 
             # new guess
             theta_guess = theta_guess - net_torque / dnt_dtheta
-            print(theta_guess)
             guess_pose[-1] = theta_guess
 
         return theta_guess
 
+
+    def find_frictionless_equilibrium(self, d, s_guess, theta_guess):
+
+        # params
+        TOL, DELTA = 1e-6, 1e-4
+
+        # pack
+        guess_pose = np.array([d, s_guess, theta_guess])
+
+        # check if at equilbrium
+        equilibrium_violation = self.frictionless_equilbrium_check(guess_pose)
+        objective = np.sqrt(equilibrium_violation[0]** 2 + (
+            self.l_contact*equilibrium_violation[1])** 2)
+               
+        while  objective > TOL:
+
+            # gradient
+            equilibrium_violation_grad = np.zeros([2, 2])
+            delta_list = [DELTA * np.array([0, 1, 0]), DELTA * np.array([0, 0, 1])]
+            for i, delta in enumerate(delta_list):
+                # print(i, delta)
+                equilibrium_violationp = self.frictionless_equilbrium_check(guess_pose + delta)
+                equilibrium_violationm = self.frictionless_equilbrium_check(guess_pose - delta)
+                equilibrium_violation_grad[:, i] = (equilibrium_violationp - equilibrium_violationm) / (2 * DELTA)
+            
+            # new guess
+            newton_step = -np.linalg.solve(equilibrium_violation_grad, equilibrium_violation)
+            guess_pose[1:]+= newton_step
+
+            # current value
+            equilibrium_violation = self.frictionless_equilbrium_check(guess_pose)
+            objective = np.sqrt(equilibrium_violation[0]** 2 + (
+                self.l_contact*equilibrium_violation[1])** 2)                
+
+        return guess_pose
+
+    def find_all_equilibrium_angles(self, d, s):
+
+        theta_guess_array = np.linspace(-np.pi / 2, np.pi / 2, 100)
+        net_torque_array = np.zeros_like(theta_guess_array)
+
+        for i, theta_guess in enumerate(theta_guess_array):
+            guess_pose = np.array([d, s, theta_guess])
+            net_torque_array[i] = self.equilibrium_check(guess_pose)
+
+        zero_crossing_array = np.zeros_like(net_torque_array, dtype=bool)
+        for i in range(net_torque_array.shape[0] - 2):
+            if (net_torque_array[i] * net_torque_array[i + 1]) < 0:
+                zero_crossing_array[i] = True
+        theta_zero_crossing = theta_guess_array[zero_crossing_array]
+
+        eq_theta_list = np.zeros_like(theta_zero_crossing)
+        for i, theta0 in enumerate(theta_zero_crossing):
+            eq_theta_list[i] = self.find_equilibrium_angle(d, s, theta0)
+
+        if len(eq_theta_list) > 1:
+            print("WARNING: More than one theta equilibrium")
+        return eq_theta_list
+        
+    def find_sticking_patch_boundary_contact(self, d, s_guess, theta_guess, const_index):
+        
+        # params
+        TOL, DS = 1e-6, 1e-4
+        sp, sm = s_guess + DS, s_guess - DS
+
+        # initial violation
+        theta_guess = self.find_equilibrium_angle(d, s_guess, theta_guess)
+        _, violation = self.wrench_cone_check_with_imepedance_contact(
+            np.array([d, s_guess, theta_guess]))
+
+        while np.abs(violation[const_index]) > TOL:
+
+            # find theta that results in eq.
+            theta_guess = self.find_equilibrium_angle(d, s_guess, theta_guess)
+            thetap = self.find_equilibrium_angle(d, sp, theta_guess)
+            thetam = self.find_equilibrium_angle(d, sm, theta_guess)
+
+            # find violation 
+            _, violation = self.wrench_cone_check_with_imepedance_contact(
+                np.array([d, s_guess, theta_guess]))
+            
+        
+            # find gradient of violation[const_index] w.r.t s
+            _, violationp = self.wrench_cone_check_with_imepedance_contact(
+                np.array([d, sp, thetap]))
+            _, violationm = self.wrench_cone_check_with_imepedance_contact(
+                np.array([d, sm, thetam]))
+            dviolation_ds = (violationp - violationm) / (2 * DS)
+            
+            # newton step
+            s_guess -= violation[const_index] / dviolation_ds[const_index]
+        
+        return np.array([d, s_guess, theta_guess])
+
+    def find_sticking_srange(self, d, const_index, theta_guess = 0, percent_d=1.0):
+        
+        s_range = np.linspace(-percent_d * d, percent_d * d, 100)
+        contact_violation_array = np.zeros_like(s_range)
+        # theta_eq_array = np.zeros_like(s_range)
+        for i, s_guess in enumerate(s_range):
+            theta_eq = self.find_equilibrium_angle(d, s_guess, theta_guess)
+            # theta_guess = theta_eq
+            _, contact_violation = self.wrench_cone_check_with_imepedance_contact(
+                np.array([d, s_guess, theta_eq]))
+
+            # theta_eq_array[i] = theta_eq
+            contact_violation_array[i] = contact_violation[const_index]
+
+        zero_crossing_array = np.zeros_like(contact_violation_array, dtype=bool)
+        for i in range(contact_violation_array.shape[0] - 2):
+            if (contact_violation_array[i] * contact_violation_array[i + 1]) < 0:
+                zero_crossing_array[i] = True  
+
+        s_zero_crossing = s_range[zero_crossing_array]
+        # theta_eq_zero_crossing = theta_eq_array[zero_crossing_array]
+
+        pose_boundary_list = []
+        for i, s0 in enumerate(s_zero_crossing):
+            pose_boundary_list.append(self.find_sticking_patch_boundary_contact(
+                d, s0, theta_guess, const_index))
+
+        return pose_boundary_list
+         
+
     def plot_state(self, robot_pose, ax):
 
         AXIS_LENGTH = 0.2
+        FORCE_SCALE = 0.002
+        TORQUE_SCALE = 0.005
+
+        # contact pose
+        contact_pose = self.inverse_kin(robot_pose)
+        contact2robot = self.contact2robot(robot_pose)
+
+        # impedance target
+        xt, yt = self.impedance_target[0], self.impedance_target[1]
+        target2robot = self.contact2robot(self.impedance_target)
 
         # robot x-axis
         ax.plot(self.pivot[0] + np.array([0, AXIS_LENGTH]),
-            self.pivot[1] + np.array([0, 0]), 'r' ,linewidth=3)
+                self.pivot[1] + np.array([0, 0]),
+                'r',
+                linewidth=3)
         # robot z-axis
         ax.plot(self.pivot[0] + np.array([0, 0]),
-            self.pivot[1] + np.array([0, AXIS_LENGTH]), 'b',linewidth=3)
+                self.pivot[1] + np.array([0, AXIS_LENGTH]),
+                'b',
+                linewidth=3)
         # plot pivot
         ax.plot(self.pivot[0], self.pivot[1], 'k.', markersize=10)
 
-        contact2robot = self.contact2robot(robot_pose)
-
         # contact x-axis
-        ax.plot(robot_pose[0] + np.array([0, AXIS_LENGTH * contact2robot[0, 0]]),
-            robot_pose[1] + np.array([0, AXIS_LENGTH*contact2robot[0, 1]]), 'r' ,linewidth=3)
+        ax.plot(
+            robot_pose[0] + np.array([0, AXIS_LENGTH * contact2robot[0, 0]]),
+            robot_pose[1] + np.array([0, AXIS_LENGTH * contact2robot[0, 1]]),
+            'r',
+            linewidth=3)
         # contact y-axis
-        ax.plot(robot_pose[0] + np.array([0, AXIS_LENGTH * contact2robot[1, 0]]),
-            robot_pose[1] + np.array([0, AXIS_LENGTH*contact2robot[1, 1]]), 'g' ,linewidth=3)
+        ax.plot(
+            robot_pose[0] + np.array([0, AXIS_LENGTH * contact2robot[1, 0]]),
+            robot_pose[1] + np.array([0, AXIS_LENGTH * contact2robot[1, 1]]),
+            'g',
+            linewidth=3)
         # contact point
         ax.plot(robot_pose[0], robot_pose[1], 'k.', markersize=10)
 
-        # plot in contact axes
-        contact_pose = self.inverse_kin(robot_pose)
         # pivot to project point
         projection_point = self.pivot + contact_pose[0] * contact2robot[:2, 0]
         ax.plot(np.array([self.pivot[0], projection_point[0]]),
-            np.array([self.pivot[1], projection_point[1]]), 'k', linewidth=1)
+                np.array([self.pivot[1], projection_point[1]]),
+                'k',
+                linewidth=1)
         # projection to contact
-        contact_point = projection_point + contact_pose[1]*contact2robot[:2, 1]
+        contact_point = projection_point + contact_pose[1] * contact2robot[:2,
+                                                                           1]
         ax.plot(np.array([projection_point[0], contact_point[0]]),
-            np.array([projection_point[1], contact_point[1]]), 'k', linewidth=1)
-            
+                np.array([projection_point[1], contact_point[1]]),
+                'k',
+                linewidth=1)
+
+        # impedance target x-axis
+        ax.plot(xt + np.array([0, AXIS_LENGTH * target2robot[0, 0]]),
+                yt + np.array([0, AXIS_LENGTH * target2robot[0, 1]]),
+                'm',
+                linewidth=3)
+        # impedance target y-axis
+        ax.plot(xt + np.array([0, AXIS_LENGTH * target2robot[1, 0]]),
+                yt + np.array([0, AXIS_LENGTH * target2robot[1, 1]]),
+                'c',
+                linewidth=3)
+        # impedance target coordinates
+        ax.plot(xt, yt, 'k.', markersize=10)
+
+        # plot wrench
+        impedance_wrench = self.impedance_model_robot(robot_pose)
+
+        # torque
+        if impedance_wrench[2] > 0:
+            tcolor = 'y'
+        else:
+            tcolor = 'b'
+        cc = plt.Circle((robot_pose[0], robot_pose[1]),
+                        TORQUE_SCALE * np.abs(impedance_wrench[2]),
+                        color=tcolor)
+        ax.add_artist(cc)
+
+        # force
+        ax.plot(
+            robot_pose[0] + FORCE_SCALE * np.array([0, impedance_wrench[0]]),
+            robot_pose[1] + FORCE_SCALE * np.array([0, impedance_wrench[1]]),
+            'k',
+            linewidth=2)
+
         robotpose_2 = self.forward_kin(contact_pose)
         print(robot_pose - robotpose_2)
 
-            
-        
 
 if __name__ == "__main__":
 
     param_dict = dict()
 
     # object parameters
-    param_dict['pivot'] = np.array([0.,0.])
-    param_dict['mgl'] = 0.
+    param_dict['pivot'] = np.array([0., 0.])
+    param_dict['mgl'] = 7.5
     param_dict['theta0'] = 0.
-    param_dict['mu_contact'] = 0.15
+    param_dict['mu_contact'] = 0.3
     param_dict['l_contact'] = 0.1
 
     # impedance parameters
-    param_dict['impedance_target'] = np.array([0.0, 0.9, 0])
-    param_dict['impedance_stiffness'] = np.array([1e3, 0.2e3, 30])
+    param_dict['impedance_target'] = np.array([0.1, 0.9, 0])
+    param_dict['impedance_stiffness'] = np.array([1000, 200, 30])
 
     # create obj
     pbal_obj = PbalPhysics(param_dict)
-    contact_pose = np.array([-1, 0, 0.1])
 
-    theta_eq = pbal_obj.find_equilibrium_angle(*contact_pose)
+    # # find eq angle for fixed d & s
+    d=-1.
+    percent_d = 0.4
+    smin =  percent_d * d
+    smax = -percent_d * d
+    sarray = np.linspace(smin, smax, 100)
 
+    s_list=[]
+    theta_list=[]
+    mask_list = []
     fig, ax = plt.subplots(1,1)
-    ax.invert_xaxis()    
-    pbal_obj.plot_state(pbal_obj.forward_kin(contact_pose), ax)
-    ax.axis('equal')
-    plt.show()
+    for s in sarray:
+        eq_angle_list = pbal_obj.find_all_equilibrium_angles(d, s)
+        for theta_eq in eq_angle_list:
+
+            is_in_cone, violation = pbal_obj.wrench_cone_check_with_imepedance_contact(
+                np.array([d, s, theta_eq]))
+            
+            s_list.append(s)
+            theta_list.append(theta_eq)
+            mask_list.append(is_in_cone)        
+
+    is_sticking_mask = np.array(mask_list, dtype=bool)
+    ax.scatter(np.array(s_list)[is_sticking_mask], np.array(theta_list)[is_sticking_mask], color='g')
+    ax.scatter(np.array(s_list)[~is_sticking_mask], np.array(theta_list)[~is_sticking_mask], color='r')
+    ax.set_xlabel('Sliding position')
+    ax.set_ylabel('Object Angle')
+
+    frictionless_equilbrium_pose = pbal_obj.find_frictionless_equilibrium(d, 0., 0.)
+    ax.plot(frictionless_equilbrium_pose[1], frictionless_equilbrium_pose[2], 'k*', markersize=15)
+
+    # find boundaries
+    s_guess, theta_guess = 0, 0
+    for i in range(4):
+        contact_pose_boundary = pbal_obj.find_sticking_srange(d, i, percent_d=percent_d)
+        if not contact_pose_boundary:
+            print("no boundary found")
+            continue
+        if i < 2:
+            ax.plot(contact_pose_boundary[0][1], contact_pose_boundary[0][2], 'ks', markersize=15)
+        else:  # # find boundaries
+            ax.plot(contact_pose_boundary[0][1], contact_pose_boundary[0][2], 'kd', markersize=15)
+
+    # s_guess, theta_guess = 0, 0
+    # for i in range(4):
+    #     contact_pose_boundary = pbal_obj.find_sticking_srange(d, i, percent_d=percent_d)
+    #     if not contact_pose_boundary:
+    #         print("no boundary found")
+    #         continue
+    #     if i < 2:
+    #         ax.plot(contact_pose_boundary[0][1], contact_pose_boundary[0][2], 'k*', markersize=15)
+    #     else:
+    #         ax.plot(contact_pose_boundary[0][1], contact_pose_boundary[0][2], 'kd', markersize=15)
+
+
+    # test cone constraints
+    # npts = 20
+    # Fdvec=np.linspace(-1.0, 0.1, npts)
+    # Fsvec=np.linspace(-2 * pbal_obj.mu_contact, 2 * pbal_obj.mu_contact, npts)
+    # tauvec=np.linspace(-pbal_obj.l_contact, pbal_obj.l_contact, npts)
     
+    # [fdplot, fsplot, tauplot] = np.meshgrid(Fdvec, Fsvec, tauvec, indexing='ij')
+
+    # is_in_cone=np.zeros([Fdvec.shape[0], Fsvec.shape[0], tauvec.shape[0]], dtype=bool)
+    
+    # for i, Fd in enumerate(Fdvec):
+    #     for j, Fs in enumerate(Fsvec):
+    #         for k, tau in enumerate(tauvec):
+    #             is_in_cone[i, j, k], _ = pbal_obj.wrench_cone_check_contact(
+    #                 np.array([Fd, Fs, tau]))
 
 
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    # ax.scatter(fdplot[is_in_cone], fsplot[is_in_cone], tauplot[is_in_cone] , c='g', marker='o')
+    # ax.scatter(fdplot[~_boundary = pbal_obj.find_sticking_srange(d, i, percent_d=percent_d)
+    #     if not contact_pose_boundary:
+    #         print("no boundary found")
+    #         continue
+    #     if i < 2:
+    #         ax.plot(contact_pose_boundary[0][1], contact_pose_boundary[0][2], 'k*', markersize=15)
+    #     else:
+    #         ax.plot(contact_pose_boundary[0][1], contact_pose_boundary[0][2], 'kd', markersize=15)
+
+
+    # test cone constraints
+    # npts = 20
+    # Fdvec=np.linspace(-1.0, 0.1, npts)
+    # Fsvec=np.linspace(-2 * pbal_obj.mu_contact, 2 * pbal_obj.mu_contact, npts)
+    # tauvec=np.linspace(-pbal_obj.l_contact, pbal_obj.l_contact, npts)
+    
+    # [fdplot, fsplot, tauplot] = np.meshgrid(Fdvec, Fsvec, tauvec, indexing='ij')
+
+    # is_in_cone=np.zeros([Fdvec.shape[0], Fsvec.shape[0], tauvec.shape[0]], dtype=bool)
+    
+    # for i, Fd in enumerate(Fdvec):
+    #     for j, Fs in enumerate(Fsvec):
+    #         for k, tau in enumerate(tauvec):
+    #             is_in_cone[i, j, k], _ = pbal_obj.wrench_cone_check_contact(
+    #                 np.array([Fd, Fs, tau]))
+
+
+    # fig = plt.figure()
+    # ax = fig.add_subplot(111, projection='3d')
+    # ax.scatter(fdplot[is_in_cone], fsplot[is_in_cone], tauplot[is_in_cone] , c='g', marker='o')
+    # ax.scatter(fdplot[~is_in_cone], fsplot[~is_in_cone], tauplot[~is_in_cone], c='r', marker='o', alpha=0.1)
+    # ax.set_xlabel('Fd')
+    # ax.set_ylabel('Fs')
+    # ax.set_zlabel('tau')
+
+    plt.show()
+
+    # # build eq pose
+    # eq_contact_pose=copy.deepcopy(contact_pose)
+    # eq_contact_pose[-1] = theta_eq_set[0]
+
+    # # plot eq pose
+    # fig, ax = plt.subplots(1,1)
+    # ax.invert_xaxis()
+    # pbal_obj.plot_state(pbal_obj.forward_kin(eq_contact_pose), ax)
+    # ax.axis('equal')
+    # plt.show()
