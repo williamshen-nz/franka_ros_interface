@@ -94,88 +94,84 @@ if __name__ == '__main__':
 
     print('control loop completed')
 
-    # fig, axs = plt.subplots(1,1)
-    # axs.plot(np.array(horizontal_pose_target_list))
-    # plt.show()
-    # # terminate rosbags
-    # ros_helper.terminate_rosbag()
+    fig, axs = plt.subplots(1,1)
+    axs.plot(np.array(horizontal_pose_target_list))
+    plt.show()
+    # terminate rosbags
+    ros_helper.terminate_rosbag()
 
-    # # unsubscribe from topics
-    # # ee_pose_in_world_from_camera_sub.unregister()
-    # obj_apriltag_pose_in_world_from_camera_sub.unregister()
-    # ft_sensor_in_base_frame_sub.unregister()
+    # unsubscribe from topics
+    # ee_pose_in_world_from_camera_sub.unregister()
+    obj_apriltag_pose_in_world_from_camera_sub.unregister()
+    ft_sensor_in_base_frame_sub.unregister()
 
-    # # convert to numpy arrays
-    # t_np = np.array(t_list)
-    # ee_pose_proprioception_np= np.array(ee_pose_proprioception_list)
-    # # ee_in_world_pose_np= np.array(ee_in_world_pose_list)
-    # obj_apriltag_in_world_pose_np= np.array(obj_apriltag_in_world_pose_list)
-    # ft_sensor_in_base_frame_np= np.array(ft_sensor_in_base_frame_list)
-    # adjusted_current_pose_np= np.array(adjusted_current_pose_list)
+    # convert to numpy arrays
+    t_np = np.array(t_list)
+    ee_pose_proprioception_np= np.array(ee_pose_proprioception_list)
+    # ee_in_world_pose_np= np.array(ee_in_world_pose_list)
+    obj_apriltag_in_world_pose_np= np.array(obj_apriltag_in_world_pose_list)
+    ft_sensor_in_base_frame_np= np.array(ft_sensor_in_base_frame_list)
+    adjusted_current_pose_np= np.array(adjusted_current_pose_list)
 
-    # # plotting end effector position
-    # fig1, ax1 = plt.subplots(3, 1, figsize=(8,5))
-    # ax1 = np.ravel(ax1, order='F')
+    # plotting end effector position
+    fig1, ax1 = plt.subplots(3, 1, figsize=(8,5))
+    ax1 = np.ravel(ax1, order='F')
 
-    # ax1[0].plot(t_np, ee_pose_proprioception_np[:, 0], 'r')
-    # # ax1[0].plot(t_np, ee_in_world_pose_np[:, 0], 'b')
-    # ax1[0].plot(t_np, adjusted_current_pose_np[:, 0], 'g')
-    # ax1[0].set_ylabel('End effector X-Position [m]')
+    ax1[0].plot(t_np, ee_pose_proprioception_np[:, 0], 'r')
+    # ax1[0].plot(t_np, ee_in_world_pose_np[:, 0], 'b')
+    ax1[0].plot(t_np, adjusted_current_pose_np[:, 0], 'g')
+    ax1[0].set_ylabel('End effector X-Position [m]')
     
-    # ax1[1].plot(t_np, ee_pose_proprioception_np[:, 1], 'r')
-    # # ax1[1].plot(t_np, ee_in_world_pose_np[:, 1], 'b')
-    # ax1[1].plot(t_np, adjusted_current_pose_np[:, 1], 'g')
-    # ax1[1].set_ylabel('End effector Y-Position [m]')
+    ax1[1].plot(t_np, ee_pose_proprioception_np[:, 1], 'r')
+    # ax1[1].plot(t_np, ee_in_world_pose_np[:, 1], 'b')
+    ax1[1].plot(t_np, adjusted_current_pose_np[:, 1], 'g')
+    ax1[1].set_ylabel('End effector Y-Position [m]')
     
-    # ax1[2].plot(t_np, ee_pose_proprioception_np[:, 2], 'r')
-    # # ax1[2].plot(t_np, ee_in_world_pose_np[:, 2], 'b')
-    # ax1[2].plot(t_np, adjusted_current_pose_np[:, 2], 'g')
-    # ax1[2].set_ylabel('End effector Z-Position [m]')
+    ax1[2].plot(t_np, ee_pose_proprioception_np[:, 2], 'r')
+    # ax1[2].plot(t_np, ee_in_world_pose_np[:, 2], 'b')
+    ax1[2].plot(t_np, adjusted_current_pose_np[:, 2], 'g')
+    ax1[2].set_ylabel('End effector Z-Position [m]')
 
-    # # plotting end effector position
-    # fig2, ax2 = plt.subplots(3, 1, figsize=(8,5))
-    # ax2 = np.ravel(ax2, order='F')
+    # plotting end effector position
+    fig2, ax2 = plt.subplots(3, 1, figsize=(8,5))
+    ax2 = np.ravel(ax2, order='F')
 
-    # ax2[0].plot(t_np, obj_apriltag_in_world_pose_np[:, 0], 'b')
-    # ax2[0].set_ylabel('Obj X-Position [m]')
+    ax2[0].plot(t_np, obj_apriltag_in_world_pose_np[:, 0], 'b')
+    ax2[0].set_ylabel('Obj X-Position [m]')
     
-    # ax2[1].plot(t_np, obj_apriltag_in_world_pose_np[:, 1], 'b')
-    # ax2[1].set_ylabel('Obj Y-Position [m]')
+    ax2[1].plot(t_np, obj_apriltag_in_world_pose_np[:, 1], 'b')
+    ax2[1].set_ylabel('Obj Y-Position [m]')
     
-    # ax2[2].plot(t_np, obj_apriltag_in_world_pose_np[:, 2], 'b')
-    # ax2[2].set_ylabel('Obj Z-Position [m]')
+    ax2[2].plot(t_np, obj_apriltag_in_world_pose_np[:, 2], 'b')
+    ax2[2].set_ylabel('Obj Z-Position [m]')
 
-    # # plotting forces
-    # fig3, ax3 = plt.subplots(3, 1, figsize=(8,5))
-    # ax3 = np.ravel(ax3, order='F')
+    # plotting forces
+    fig3, ax3 = plt.subplots(3, 1, figsize=(8,5))
+    ax3 = np.ravel(ax3, order='F')
 
-    # ax3[0].plot(t_np, ft_sensor_in_base_frame_np[:, 0], 'k')
-    # ax3[0].set_ylabel('X-Force [N]')
+    ax3[0].plot(t_np, ft_sensor_in_base_frame_np[:, 0], 'k')
+    ax3[0].set_ylabel('X-Force [N]')
     
-    # ax3[1].plot(t_np, ft_sensor_in_base_frame_np[:, 1], 'k')
-    # ax3[1].set_ylabel('Y-Force [N]')
+    ax3[1].plot(t_np, ft_sensor_in_base_frame_np[:, 1], 'k')
+    ax3[1].set_ylabel('Y-Force [N]')
     
-    # ax3[2].plot(t_np, ft_sensor_in_base_frame_np[:, 2], 'k')
-    # ax3[2].set_ylabel('Z-Force [N]')
+    ax3[2].plot(t_np, ft_sensor_in_base_frame_np[:, 2], 'k')
+    ax3[2].set_ylabel('Z-Force [N]')
 
-    # # plotting position
-    # fig4, ax4 = plt.subplots(1, 1)
-    # ax4.plot(obj_apriltag_in_world_pose_np[:, 0], obj_apriltag_in_world_pose_np[:, 2], 'b')
-    # ax4.plot(ee_pose_proprioception_np[:, 0], ee_pose_proprioception_np[:, 2], 'r')
-    # ax4.plot(np.array(x0_list[3:]), np.array(z0_list[3:]), marker='o', markersize=5, color="red")
-    # ax4.set_xlabel('X [m]')
-    # ax4.set_ylabel('Z [m]')
-    # ax4.set_xlim(0.4,0.6 )
-    # ax4.set_ylim(-.05, .15)
-
-    # plt.show()
+    # plotting position
+    fig4, ax4 = plt.subplots(1, 1)
+    ax4.plot(obj_apriltag_in_world_pose_np[:, 0], obj_apriltag_in_world_pose_np[:, 2], 'b')
+    ax4.plot(ee_pose_proprioception_np[:, 0], ee_pose_proprioception_np[:, 2], 'r')
+    ax4.plot(np.array(x0_list[3:]), np.array(z0_list[3:]), marker='o', markersize=5, color="red")
+    ax4.set_xlabel('X [m]')
+    ax4.set_ylabel('Z [m]')
+    ax4.set_xlim(0.4,0.6 )
+    ax4.set_ylim(-.05, .15)
 
 
-
-
-
-    # fig, axs = plt.subplots(1,1)
-    # axs.scatter(np.array(robot_orientation_list), 
-    #     np.array(gravitational_torque_list))
-    # axs.plot(np.array([-0.6, 0.6]), mgl*(np.array([-0.6, 0.6]) - theta0))
-    # plt.show()
+    fig, axs = plt.subplots(1,1)
+    axs.scatter(np.array(robot_orientation_list), 
+        np.array(gravitational_torque_list))
+    axs.plot(np.array([-0.6, 0.6]), mgl*(np.array([-0.6, 0.6]) - theta0))
+    
+    plt.show()
