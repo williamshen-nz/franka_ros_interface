@@ -247,23 +247,23 @@ class PbalImpedanceInverseModel(object):
         result2 = self.solve_lp_cvxopt(cost, Aeq, beq, Aiq, biq)
 
         robot_wrench = np.squeeze(np.array(result2['x']))
-        print(np.dot(Aactive_const, robot_wrench) - bactive_const)
+        # print(np.dot(Aactive_const, robot_wrench) - bactive_const)
         # print(robot_wrench)
         # print(sol2 - robot_wrench)
 
-        if np.all(robot_wrench != None):
+        # if np.all(robot_wrench != None):
 
-            TOL = 0.001
-            iq_const_slack = np.dot(Aiq, robot_wrench) - biq
-            const_name_list = ['Other friction', 'Pivot 1', 'Pivot 2', 
-                'Torque CCW', 'Torque CW', 'Normal force cap', 'Aux variable']
-            for i, iq_slacki in enumerate(iq_const_slack):                
-                    # if iq_slacki < TOL and ((i <= 4 and robot_wrench[-1] < TOL
-                    #     ) or (i >= 5)):
-                    if iq_slacki > -TOL:
-                        # pass
-                        # print(iq_slacki)
-                        print(const_name_list[i])                        
+        #     TOL = 0.001
+        #     iq_const_slack = np.dot(Aiq, robot_wrench) - biq
+        #     const_name_list = ['Other friction', 'Pivot 1', 'Pivot 2', 
+        #         'Torque CCW', 'Torque CW', 'Normal force cap', 'Aux variable']
+        #     # for i, iq_slacki in enumerate(iq_const_slack):                
+        #     #         # if iq_slacki < TOL and ((i <= 4 and robot_wrench[-1] < TOL
+        #     #         #     ) or (i >= 5)):
+        #     #         if iq_slacki > -TOL:
+        #     #             # pass
+        #     #             # print(iq_slacki)
+        #     #             print(const_name_list[i])                        
                             
 
         # print("Iq Const: ", np.dot(Aiq, robot_wrench) - biq)
