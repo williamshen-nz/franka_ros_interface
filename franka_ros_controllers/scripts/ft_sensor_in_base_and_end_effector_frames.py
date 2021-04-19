@@ -9,9 +9,18 @@ from ros_helper import (unit_pose, list2pose_stamped, pose_stamped2list,
                                convert_reference_frame, quat2list, 
                                lookupTransform, wrenchstamped_2FT, rotate_wrench, 
                                wrench_reference_point_change)
+from std_msgs.msg import Bool
+
+import numpy as np
 
 # ft sensor topic
 ft_wrench_in_ft_sensor_frame = "/netft/netft_data"
+
+# length of the end effect. this should really be placed in another file
+LCONTACT = 0.065
+
+# Minimum required normal force
+NORMAL_FORCE_THRESHOLD = .05
 
 def zero_ft_sensor():
     rospy.wait_for_service('/netft/zero', timeout=0.5)
@@ -50,6 +59,8 @@ if __name__ == '__main__':
         '/end_effector_sensor_in_end_effector_frame', WrenchStamped, queue_size = 10)
     end_effector_sensor_in_base_frame_pub = rospy.Publisher(
         '/end_effector_sensor_in_base_frame', WrenchStamped, queue_size = 10)
+    torque_cone_boundary_test_pub = rospy.Publisher(
+        '/torque_cone_boundary_test', Bool , queue_size = 10)
 
 
     # wait for ft data
@@ -101,10 +112,27 @@ if __name__ == '__main__':
             panda_hand_in_base_pose)
         end_effector_wrench_in_base.header.frame_id = "base"
 
+        #check to see if we are near the torque boundary of the wrench cone
+        #(conditioned on the normal force exceeding a certain amount)
+        #return false if we are close to boundary, or there is no normal force
+        #return true if we are sufficiently in the interior of the wrench cone
+        normal_force = end_effector_wrench_in_end_effector.wrench.force.x
+        friction_force = end_effector_wrench_in_end_effector.wrench.force.y
+        torque =  end_effector_wrench_in_end_effector.wrench.torque.z
+
+        torque_boundary_boolean = False
+        torque_boundary_boolean_message = Bool()
+
+        if normal_force<-NORMAL_FORCE_THRESHOLD:
+            torque_boundary_boolean=(np.abs(torque)/np.abs(normal_force))<=(.8*.5*LCONTACT)
+            torque_ratio = (np.abs(torque)/np.abs(normal_force))
+        
+        torque_boundary_boolean_message.data = torque_boundary_boolean
 
         # publish and sleep
         ft_sensor_in_base_frame_pub.publish(ft_wrench_in_base)
         ft_sensor_in_end_effector_frame_pub.publish(ft_wrench_in_end_effector)
         end_effector_sensor_in_end_effector_frame_pub.publish(end_effector_wrench_in_end_effector)
         end_effector_sensor_in_base_frame_pub.publish(end_effector_wrench_in_base)
+        torque_cone_boundary_test_pub.publish(torque_boundary_boolean_message)
         rate.sleep()

@@ -9,7 +9,7 @@ import pdb
 import ros_helper
 from franka_interface import ArmInterface 
 from geometry_msgs.msg import WrenchStamped
-from std_msgs.msg import Float32MultiArray, Float32
+from std_msgs.msg import Float32MultiArray, Float32, Bool
 import matplotlib.pyplot as plt
 
 def generalized_velocities_callback(data):
@@ -23,6 +23,11 @@ def end_effector_wrench_in_end_effector_frame_callback(data):
 def get_xy_wrench(wrench_list):
     return [wrench_list[0], wrench_list[1], wrench_list[-1]]
 
+def torque_cone_boundary_test_callback(data):
+    global torque_boundary_boolean
+    torque_boundary_boolean = data.data
+
+
 
 if __name__ == '__main__':
 
@@ -33,13 +38,17 @@ if __name__ == '__main__':
     rate = rospy.Rate(100)
 
     # initialize globals
-    end_effector_wrench_in_end_effector_frame, generalized_velocities = None, None
+    end_effector_wrench_in_end_effector_frame, generalized_velocities, \
+        torque_boundary_boolean = None, None, None
 
     #setting up subscribers
     end_effector_wrench_sub = rospy.Subscriber("/end_effector_sensor_in_end_effector_frame", 
         WrenchStamped,  end_effector_wrench_in_end_effector_frame_callback)
     generalized_velocities_sub = rospy.Subscriber("/generalized_velocities", 
         Float32MultiArray,  generalized_velocities_callback)
+    torque_cone_boundary_test_sub = rospy.Subscriber("/torque_cone_boundary_test", 
+        Bool,  torque_cone_boundary_test_callback)
+
 
     # setting up publisher
     robot_friction_estimate_pub = rospy.Publisher('/robot_friction_estimate', Float32, 
@@ -54,6 +63,11 @@ if __name__ == '__main__':
     while generalized_velocities is None:
         rospy.sleep(0.1)
 
+    # make sure subscribers are receiving commands
+    print("Waiting for torque boundary check")
+    while torque_boundary_boolean is None:
+        rospy.sleep(0.1)
+
     # initialize
     generalized_velocities_list = []
     end_effector_2D_wrench_list = []
@@ -62,6 +76,7 @@ if __name__ == '__main__':
 
     # hyperparameters
     sliding_threshold = 0.03
+    NOMINAL_FRICTION_VAL = 0.15
 
     # initialize estimate
     friction_estimate = 0.
@@ -76,7 +91,7 @@ if __name__ == '__main__':
             end_effector_wrench_in_end_effector_frame))
 
         # if we are sliding
-        if generalized_velocities.data[1] > sliding_threshold:
+        if (generalized_velocities.data[1] > sliding_threshold) and torque_boundary_boolean:
             
             # if is new a velocity 
             if len(generalized_velocities_list)==0 or \
@@ -100,6 +115,9 @@ if __name__ == '__main__':
         # publish and sleep
         if num_measurements > 0:
             friction_estimate_message.data = friction_estimate
-            robot_friction_estimate_pub.publish(friction_estimate_message)           
+            robot_friction_estimate_pub.publish(friction_estimate_message)  
+        else:         
+            friction_estimate_message.data = NOMINAL_FRICTION_VAL
+            robot_friction_estimate_pub.publish(friction_estimate_message)  
 
         rate.sleep()    

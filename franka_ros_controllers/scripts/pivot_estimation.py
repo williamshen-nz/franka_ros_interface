@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+ #!/usr/bin/env python
 # estimates pivot location and publishes pivot location as Marker and Point
 # subscribes to end_effector pose 
 
@@ -12,6 +12,7 @@ import franka_helper
 from franka_interface import ArmInterface 
 from geometry_msgs.msg import TransformStamped
 from visualization_msgs.msg import Marker
+from std_msgs.msg import Bool
 
 def initialize_marker():
     marker_message = Marker()
@@ -97,6 +98,10 @@ def update_center_of_rotation_estimate(pose_list):
 
     return x0,z0
 
+def torque_cone_boundary_test_callback(data):
+    global torque_boundary_boolean
+    torque_boundary_boolean = data.data
+
 if __name__ == '__main__':
 
     rospy.init_node("pivot_estimator")
@@ -107,13 +112,18 @@ if __name__ == '__main__':
 
     endpoint_pose_all = []
 
+    torque_boundary_boolean = None
+    # set up torque cone boundary subscriber
+    torque_cone_boundary_test_sub = rospy.Subscriber("/torque_cone_boundary_test", 
+        Bool,  torque_cone_boundary_test_callback)
+
     # set up pivot Point publisher
     frame_message = initialize_frame()
     pivot_xyz_pub = rospy.Publisher('/pivot_frame', TransformStamped, queue_size=10)      
 
     # set up pivot marker publisher
     marker_message = initialize_marker()
-    pivot_marker_pub = rospy.Publisher('/pivot_marker', Marker, queue_size=10)  
+    pivot_marker_pub = rospy.Publisher('/pivot_marker', Marker, queue_size=10)
 
     # set up transform broadcaster
     pivot_frame_broadcaster = tf2_ros.TransformBroadcaster()   
@@ -129,6 +139,11 @@ if __name__ == '__main__':
     Nbatch = 250             # max number of datapoints for estimation
     update_length = 200       # number of good points before update/publish
     diff_threshold = 0.001   # threshold for new datapoints
+
+    # make sure subscribers are receiving commands
+    print("Waiting for torque boundary check")
+    while torque_boundary_boolean is None:
+        pass
 
     print('starting pivot estimation loop')
     while not rospy.is_shutdown():
@@ -156,8 +171,8 @@ if __name__ == '__main__':
         # diff angle
         diff_angle = 2 * np.arccos(diff_quat[-1])
 
-        # if measured pose is new
-        if np.abs(diff_angle) > diff_threshold:
+        # if measured pose is new, and the measurement is not at wrench cone boundary
+        if np.abs(diff_angle) > diff_threshold and torque_boundary_boolean:
             
             # append to list
             endpoint_pose_all.append(endpoint_pose_list)

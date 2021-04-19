@@ -177,6 +177,89 @@ class PbalImpedanceForwardModel(object):
             print("WARNING: More than one theta equilibrium")
         return eq_theta_list
 
+    def find_sticking_patch_boundary_contact_fixed_theta(self, d, s_guess, theta, const_index):
+        # params
+        TOL, DS, max_iter = 1e-6, 1e-4, 20
+        sp, sm = s_guess + DS, s_guess - DS
+
+        # initial violation
+        _, violation = self.wrench_cone_check_with_imepedance_contact(
+            np.array([d, s_guess, theta]))
+
+        count = 0
+        while np.abs(violation[const_index]) > TOL and count<max_iter:
+            count+=1
+            # find violation
+            _, violation = self.wrench_cone_check_with_imepedance_contact(
+                np.array([d, s_guess, theta]))
+
+            # find gradient of violation[const_index] w.r.t s
+            _, violationp = self.wrench_cone_check_with_imepedance_contact(
+                np.array([d, sp, theta]))
+            _, violationm = self.wrench_cone_check_with_imepedance_contact(
+                np.array([d, sm, theta]))
+            dviolation_ds = (violationp - violationm) / (2 * DS)
+            # newton step
+            s_guess -= violation[const_index] / dviolation_ds[const_index]
+
+
+        if np.abs(violation[const_index]) > TOL:
+            print('Newtons method iteration limit reached')
+            s_guess = -0.01
+        return np.array([d, s_guess, theta])
+
+
+    def find_all_sticking_patch_values_theta_sweep(self,d,s_guess,const_index):
+        theta_array = np.linspace(-np.pi / 2, np.pi / 2, 100)
+        s_boundary_array = np.zeros_like(theta_array)
+        for i, theta in enumerate(theta_array):
+            boundary_pose = self.find_sticking_patch_boundary_contact_fixed_theta(d, s_guess, theta, const_index)
+            s_boundary_array[i] = boundary_pose[1]
+        return theta_array,s_boundary_array
+
+
+    def find_sticking_patch_boundary_contact_fixed_s(self, d, s, theta_guess, const_index):
+        # params
+        TOL, DTHT, max_iter = 1e-6, 1e-4, 20
+        thtp, thtm = theta_guess + DTHT, theta_guess - DTHT
+
+        # initial violation
+        _, violation = self.wrench_cone_check_with_imepedance_contact(
+            np.array([d, s, theta_guess]))
+
+        count = 0
+        while np.abs(violation[const_index]) > TOL and count<max_iter:
+            count+=1
+            # find violation
+            _, violation = self.wrench_cone_check_with_imepedance_contact(
+                np.array([d, s, theta_guess]))
+
+            # find gradient of violation[const_index] w.r.t s
+            _, violationp = self.wrench_cone_check_with_imepedance_contact(
+                np.array([d, s, thtp]))
+            _, violationm = self.wrench_cone_check_with_imepedance_contact(
+                np.array([d, s, thtm]))
+            dviolation_dtht = (violationp - violationm) / (2 * DTHT)
+            # newton step
+            theta_guess -= violation[const_index] / dviolation_dtht[const_index]
+
+
+        if np.abs(violation[const_index]) > TOL:
+            print('Newtons method iteration limit reached')
+            theta_guess = -0.01
+
+        return np.array([d, s, theta_guess])
+
+    def find_all_sticking_patch_values_s_sweep(self, d, theta_guess, const_index, percent_d=1.):
+        s_array = np.linspace(-percent_d * d, percent_d * d, 100)
+        theta_boundary_array = np.zeros_like(s_array)
+
+        for i, s in enumerate(s_array):
+            boundary_pose = self.find_sticking_patch_boundary_contact_fixed_s(d, s, theta_guess, const_index)
+            theta_boundary_array[i] = boundary_pose[2]
+
+        return s_array, theta_boundary_array
+
     def find_sticking_patch_boundary_contact(self, d, s_guess, theta_guess,
                                              const_index):
 
@@ -248,6 +331,28 @@ class PbalImpedanceForwardModel(object):
                     d, s0, theta_guess, const_index))
 
         return pose_boundary_list
+
+    # def wrench_cone_check_with_impedance_contact_all_s(self, d, theta, percent_d=1.0):
+        
+    #     s_range = np.linspace(-percent_d * d, percent_d * d, 100)
+    #     contact_violation_list = []
+
+    #     for s in s_range:
+    #         _, cvec = self.wrench_cone_check_with_imepedance_contact(np.array([d, s, theta]))
+    #         contact_violation_list.append(cvec[2:])
+
+    #     return s_range, np.array(contact_violation_list)
+
+    # def wrench_cone_check_with_impedance_contact_all_theta(self, d, s):
+        
+    #     theta_range = np.linspace(-np.pi/2, np.pi/2, 100)
+    #     contact_violation_list = []
+
+    #     for theta in theta_range:
+    #         _, cvec = self.wrench_cone_check_with_imepedance_contact(np.array([d, s, theta]))
+    #         contact_violation_list.append(cvec[2:])
+
+    #     return theta_range, np.array(contact_violation_list)
 
     def plot_state(self, robot_pose, ax):
 
@@ -348,26 +453,32 @@ if __name__ == "__main__":
     # object parameters
     obj_params = dict()
     obj_params['pivot'] = np.array([0., 0.])
-    obj_params['mgl'] = 7.5
+    obj_params['mgl'] = 0.75
     obj_params['theta0'] = 0.
-    obj_params['mu_contact'] = 0.3
-    obj_params['l_contact'] = 0.001
+    obj_params['mu_contact'] = 0.2
+    obj_params['mu_ground'] = 0.7
+    obj_params['l_contact'] = 0.065
 
     # impedance parameters
     param_dict=dict()
     param_dict['obj_params'] = obj_params
-    param_dict['impedance_target'] = np.array([0.1, 0.9, 0])
-    param_dict['impedance_stiffness'] = np.array([1000, 200, 30])
+    param_dict['impedance_target'] = np.array([-0.00, 0.08, 0.])
+    param_dict['impedance_stiffness'] = np.array([1000, 1000, 30.0])
 
     # create obj
     pbal_impedance_fwd = PbalImpedanceForwardModel(param_dict)
 
     # # find eq angle for fixed d & s
-    d = -1.
-    percent_d = 0.4
+    d = -0.1 # meters
+    percent_d = 1.0
     smin = percent_d * d
     smax = -percent_d * d
     sarray = np.linspace(smin, smax, 100)
+
+    theta_boundary_array, s_left_array = pbal_impedance_fwd.find_all_sticking_patch_values_theta_sweep(d, 0.,0)
+    _, s_right_array = pbal_impedance_fwd.find_all_sticking_patch_values_theta_sweep(d, 0.,1)
+    s_boundary_array, theta_left_torque_array = pbal_impedance_fwd.find_all_sticking_patch_values_s_sweep(d, 0.,2)
+    _, theta_right_torque_array = pbal_impedance_fwd.find_all_sticking_patch_values_s_sweep(d, 0.,3)
 
     s_list = []
     theta_list = []
@@ -401,6 +512,19 @@ if __name__ == "__main__":
             'k*',
             markersize=15)
 
+    ax.plot(s_left_array,
+        theta_boundary_array,
+       color='c')
+    ax.plot(s_right_array,
+       theta_boundary_array,
+       color='m')
+    ax.plot(s_boundary_array,
+       theta_left_torque_array,
+       color='b')
+    ax.plot(s_boundary_array,
+       theta_right_torque_array,
+       color='g')
+
     # find boundaries
     s_guess, theta_guess = 0, 0
     for i in range(4):
@@ -419,6 +543,16 @@ if __name__ == "__main__":
                     contact_pose_boundary[0][2],
                     'kd',
                     markersize=15)
+
+    plt.xlim([-0.5*d, 0.5*d])
+    plt.ylim([-np.pi/2, np.pi/2])
+
+    # s_range, contact_violation_array = pbal_impedance_fwd.wrench_cone_check_with_impedance_contact_all_theta(
+    #     d, 0.)
+
+    # fig2, ax2 = plt.subplots(1,1)
+    # ax2.plot(s_range, contact_violation_array[:,0])
+    # ax2.plot(s_range, contact_violation_array[:,1])
 
     # s_guess, theta_guess = 0, 0
     # for i in range(4):

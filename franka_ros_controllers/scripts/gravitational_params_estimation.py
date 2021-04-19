@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import ros_helper, franka_helper
 from franka_interface import ArmInterface 
 from geometry_msgs.msg import WrenchStamped
-from std_msgs.msg import Float32MultiArray, Float32
+from std_msgs.msg import Float32MultiArray, Float32, Bool
 
 
 def external_wrench_callback(data):
@@ -20,6 +20,10 @@ def external_wrench_callback(data):
 def hand_orientation_callback(data):
     global robot_angle
     robot_angle = data.data[-1]
+
+def torque_cone_boundary_test_callback(data):
+    global torque_boundary_boolean
+    torque_boundary_boolean = data.data
 
 def update_gravity_params(theta_list, moment_list):
 
@@ -58,6 +62,11 @@ if __name__ == '__main__':
     generalized_positions_sub = rospy.Subscriber("/generalized_positions", 
         Float32MultiArray,  hand_orientation_callback)
 
+    torque_boundary_boolean = None
+    # set up torque cone boundary subscriber
+    torque_cone_boundary_test_sub = rospy.Subscriber("/torque_cone_boundary_test", 
+        Bool,  torque_cone_boundary_test_callback)
+
     # set up publishers
     com_ray_pub = rospy.Publisher('/com_ray', Float32, queue_size=10)
     gravity_torque_pub = rospy.Publisher('/gravity_torque', Float32, queue_size=10)
@@ -72,6 +81,10 @@ if __name__ == '__main__':
     # wait
     print("Waiting for robot angle ")
     while robot_angle is None:
+        pass
+
+    print("Waiting for torque boundary check")
+    while torque_boundary_boolean is None:
         pass
 
     # initialize estimates
@@ -111,8 +124,8 @@ if __name__ == '__main__':
             gravitational_torque_list.append(external_wrench_list[-2])
             robot_orientation_list.append(robot_angle)
 
-        # if measured pose is new
-        if np.abs(robot_angle - robot_orientation_list[-1]) > diff_threshold:
+        # if measured pose is new and the measurement is not at wrench cone boundary
+        if (np.abs(robot_angle - robot_orientation_list[-1]) > diff_threshold) and torque_boundary_boolean:
             
             # append to list
             gravitational_torque_list.append(external_wrench_list[-2])

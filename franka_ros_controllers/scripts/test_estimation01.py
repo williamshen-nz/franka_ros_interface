@@ -97,8 +97,6 @@ if __name__ == '__main__':
     fig, axs = plt.subplots(1,1)
     axs.plot(np.array(horizontal_pose_target_list))
     plt.show()
-    # terminate rosbags
-    ros_helper.terminate_rosbag()
 
     # unsubscribe from topics
     # ee_pose_in_world_from_camera_sub.unregister()

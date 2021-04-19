@@ -252,26 +252,6 @@ if __name__ == '__main__':
     # waypoint trajectory
     initial_generalized_positions = copy.deepcopy(generalized_positions)
 
-    # # initial pivot location
-    # initial_pivot_xyz = copy.deepcopy(pivot_xyz)
-
-    # excursion
-    
-    delta_d, delta_s, delta_theta, delta_t \
-     = 0.0, -0.02, 0, 10.
-
-    mode = -1
-
-    if delta_s>0:
-        mode = 0
-    if delta_s<0:
-        mode = 1
-
-    # mode 0: sticking pivot, robot slide right 
-    # mode 1: sticking pivot, robot slide left
-    # mode 2: pivot sliding left, robot sticking
-    # mode 3: pivot sliding right, robot_sticking
-    # mode not in [0, 3]: sticking, sticking
 
     # build impedance model
     obj_params = dict()
@@ -281,7 +261,7 @@ if __name__ == '__main__':
     obj_params['mu_contact'] = robot_friction_coeff
     print(robot_friction_coeff)
     obj_params['mu_ground'] = MU_GROUND
-    obj_params['l_contact'] = 0.75*LCONTACT
+    obj_params['l_contact'] = 0.75 * LCONTACT
 
     # impedance parameters
     param_dict = dict()
@@ -291,12 +271,68 @@ if __name__ == '__main__':
     # create inverse model
     pbal_inv_model = PbalImpedanceInverseModel(param_dict)
 
+    # set up rosbag
+    rostopic_list = ["/camera/color/image_raw/compressed",
+                     "/face_contact_center_pose_in_world_frame_publisher",
+                     "/obj_apriltag_pose_in_world_from_camera_publisher",
+                     "/generalized_positions",
+                     "/end_effector_sensor_in_base_frame",
+                     "/com_ray",
+                     "/pivot_marker",
+                     "/gravity_torque",
+                     "/external_wrench_in_pivot",
+                     "/robot_friction_estimate"]
+
+    ros_helper.initialize_rosbag(rostopic_list, exp_name="feedback_force_test")
+
     # initialize lists for plotting
     t_list = []
     end_effector_pose2D_list = []
     object_pose2D_list = []
     end_effector_wrench2D_list = []
     robot_friction_coeff_list = []
+
+    # contact pose target
+    contact_pose_target = initial_generalized_positions
+    
+    # update pbal inv model
+    pbal_inv_model.contact_pose_target = contact_pose_target
+    pbal_inv_model.pbal_helper.pivot = np.array([pivot_xyz[0], pivot_xyz[2]])
+
+    # make nominal wrench
+    sol = pbal_inv_model.solve_linear_program_aux(NMAX)
+    robot_wrench_nom = sol[:3]
+
+    # make wrenchn with large normal force
+    sol = pbal_inv_model.solve_linear_program_aux(NMAX*2)
+    robot_wrench_large_normal = sol[:3]
+
+    # make wrenchn with small normal force
+    contact2robot = pbal_inv_model.pbal_helper.contact2robot(initial_generalized_positions)
+    sol = pbal_inv_model.solve_linear_program(NMAX, 
+        cost=np.dot(contact2robot, np.array([-1., 0., 0.])))
+    robot_wrench_small_normal = sol[:3]
+
+    # make clockwise wrench
+    contact2robot = pbal_inv_model.pbal_helper.contact2robot(initial_generalized_positions)
+    sol = pbal_inv_model.solve_linear_program(NMAX, 
+        cost=np.dot(contact2robot, np.array([0., -1., 0.])))
+    robot_wrench_cw = sol[:3]
+
+    # make counter clockwise wrench
+    sol = pbal_inv_model.solve_linear_program(NMAX, 
+         cost=np.dot(contact2robot, np.array([0., 1., 0.])))
+    robot_wrench_ccw = sol[:3]
+
+    # make interpolation waypoints
+    tmax = 10
+    t_waypoint = np.array([0, 0.33, 0.66, 1.0]) * tmax
+    
+    alpha = 0.5
+    c1_waypoint = np.array([1.,-alpha,-alpha, 1.])
+    c2_waypoint = np.array([0., 1 + alpha, 0., 0.])
+    c3_waypoint = np.array([0., 0., 1 + alpha, 0.])
+
 
     start_time = rospy.Time.now().to_sec()
     print('starting control loop')
@@ -306,25 +342,18 @@ if __name__ == '__main__':
             t = rospy.Time.now().to_sec() - start_time
             t_list.append(t)
 
-            if t > 1.2 * delta_t:
+            if t > tmax:
                 break
 
-            # get delta waypoint
-            delta_d_waypoint, delta_s_waypoint, delta_theta_waypoint =  return_waypoint(
-                t, delta_d = delta_d, delta_s = delta_s, delta_theta = delta_theta, 
-                delta_t = delta_t)
+            # find wrench
+            c1 = np.interp(t, t_waypoint, c1_waypoint)
+            c2 = np.interp(t, t_waypoint, c2_waypoint)
+            c3 = np.interp(t, t_waypoint, c3_waypoint)
+            #robot_wrench = c1 * robot_wrench_nom + c2 * robot_wrench_cw \
+            #    + c3 * robot_wrench_ccw
 
-            # contact pose target
-            contact_pose_target = initial_generalized_positions + np.array(
-                [delta_d_waypoint, delta_s_waypoint, delta_theta_waypoint])
-            
-            # update pbal inv model
-            pbal_inv_model.contact_pose_target = contact_pose_target
-            pbal_inv_model.pbal_helper.pivot = np.array([pivot_xyz[0], pivot_xyz[2]])
-
-            # make target wrench
-            sol = pbal_inv_model.solve_linear_program_mode_aux(NMAX, mode=mode)
-            robot_wrench = sol[:3]
+            robot_wrench = c1 * robot_wrench_nom + c2 * robot_wrench_large_normal \
+                + c3 * robot_wrench_small_normal
 
             # make impedance target
             impedance_target_delta= robot_wrench / np.array(IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
@@ -381,6 +410,10 @@ if __name__ == '__main__':
     end_effector_wrench_sub.unregister()
     object_apriltag_pose_sub.unregister()
     robot_friction_coeff_sub.unregister()
+
+
+    # terminate rosbags
+    ros_helper.terminate_rosbag()
 
     # convert to array
     t_array = np.array(t_list)

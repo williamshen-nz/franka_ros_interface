@@ -141,7 +141,7 @@ def generalized_positions_callback(data):
 
 def end_effector_wrench_callback(data):
     global end_effector_wrench
-    end_effector_wrench = data
+    end_effector_wrench = data 
 
 def object_apriltag_pose_callback(data):
     global object_apriltag_pose
@@ -163,15 +163,20 @@ def gravity_torque_callback(data):
 
 if __name__ == '__main__':
 
+    RATE = 30.
     rospy.init_node("impedance_control_test")
-    rate = rospy.Rate(30.)
+    rate = rospy.Rate(RATE)
 
     # constants
     LCONTACT = 0.065
+    LNORMALIZE = 8 * LCONTACT
     MU_GROUND = 0.75
-    IMPEDANCE_STIFFNESS_LIST = [300, 300, 300, 100, 10, 100]
-    # stiffness=[1200, 600, 200, 100, 0, 100]
-    NMAX = 20
+    IMPEDANCE_STIFFNESS_LIST = [1000, 1000, 1000, 100, 30, 100]
+    # IMPEDANCE_STIFFNESS_LIST = [300, 300, 300, 100, 10, 100]
+    # Minimum required normal force
+    NORMAL_FORCE_THRESHOLD = .05
+    NMAX = 30
+
 
     # arm interface
     arm = ArmInterface()
@@ -222,9 +227,9 @@ if __name__ == '__main__':
         rospy.sleep(0.1)
 
     # make sure subscribers are receiving commands
-    print("Waiting for object april tag pose")
-    while object_apriltag_pose is None:
-        rospy.sleep(0.1)
+    # print("Waiting for object april tag pose")
+    # while object_apriltag_pose is None:
+    #     rospy.sleep(0.1)
 
     print("Waiting for robot_friction_coeff")
     while robot_friction_coeff is None:
@@ -252,13 +257,14 @@ if __name__ == '__main__':
     # waypoint trajectory
     initial_generalized_positions = copy.deepcopy(generalized_positions)
 
-    # # initial pivot location
-    # initial_pivot_xyz = copy.deepcopy(pivot_xyz)
-
-    # excursion
-    
+    # excursion    
+    # mode 0: sticking pivot, robot slide right 
+    # mode 1: sticking pivot, robot slide left
+    # mode 2: pivot sliding left, robot sticking
+    # mode 3: pivot sliding right, robot_sticking
+    # mode not in [0, 3]: sticking, sticking
     delta_d, delta_s, delta_theta, delta_t \
-     = 0.0, -0.02, 0, 10.
+     = 0.0, 0.00, np.pi/6, 10.
 
     mode = -1
 
@@ -267,19 +273,18 @@ if __name__ == '__main__':
     if delta_s<0:
         mode = 1
 
-    # mode 0: sticking pivot, robot slide right 
-    # mode 1: sticking pivot, robot slide left
-    # mode 2: pivot sliding left, robot sticking
-    # mode 3: pivot sliding right, robot_sticking
-    # mode not in [0, 3]: sticking, sticking
+    # integral controller
+    Kp, Ki = 0.2, 10.0
+    # Kp, Ki = 0.0, 0.0
+    integrated_wrench_error = 0
+    error_bound = 30
 
     # build impedance model
     obj_params = dict()
     obj_params['pivot'] = np.array([pivot_xyz[0], pivot_xyz[2]])
     obj_params['mgl'] = mgl
     obj_params['theta0'] = theta0
-    obj_params['mu_contact'] = robot_friction_coeff
-    print(robot_friction_coeff)
+    obj_params['mu_contact'] = 0.2
     obj_params['mu_ground'] = MU_GROUND
     obj_params['l_contact'] = 0.75*LCONTACT
 
@@ -297,6 +302,23 @@ if __name__ == '__main__':
     object_pose2D_list = []
     end_effector_wrench2D_list = []
     robot_friction_coeff_list = []
+    nominal_contact_wrench_list = []
+    contact_wrench_list = []
+    wrench_error_list = []
+
+    # set up rosbag
+    # rostopic_list = ["/camera/color/image_raw/compressed",
+    #                  "/face_contact_center_pose_in_world_frame_publisher",
+    #                  "/obj_apriltag_pose_in_world_from_camera_publisher",
+    #                  "/generalized_positions",
+    #                  "/end_effector_sensor_in_base_frame",
+    #                  "/com_ray",
+    #                  "/pivot_marker",
+    #                  "/gravity_torque",
+    #                  "/external_wrench_in_pivot",
+    #                  "/robot_friction_estimate"]
+
+    # ros_helper.initialize_rosbag(rostopic_list, exp_name="impedance_control03")
 
     start_time = rospy.Time.now().to_sec()
     print('starting control loop')
@@ -304,7 +326,6 @@ if __name__ == '__main__':
 
             # current time
             t = rospy.Time.now().to_sec() - start_time
-            t_list.append(t)
 
             if t > 1.2 * delta_t:
                 break
@@ -322,12 +343,60 @@ if __name__ == '__main__':
             pbal_inv_model.contact_pose_target = contact_pose_target
             pbal_inv_model.pbal_helper.pivot = np.array([pivot_xyz[0], pivot_xyz[2]])
 
-            # make target wrench
+            # make nominal wrench
             sol = pbal_inv_model.solve_linear_program_mode_aux(NMAX, mode=mode)
-            robot_wrench = sol[:3]
+            try:
+                nominal_robot_wrench = sol[:3]
+            except IndexError:
+                print("couldn't find solution")
+                break
+            contact2robot = pbal_inv_model.pbal_helper.contact2robot(generalized_positions)
+            nominal_contact_wrench = np.dot(contact2robot, nominal_robot_wrench)
+            nominal_contact_wrench_rescaled = nominal_contact_wrench * np.array(
+                [1., 1., (1/LNORMALIZE)])
+
+            # measured wrench
+            measured_contact_wench_list = ros_helper.wrench_stamped2list(end_effector_wrench)
+            measured_contact_wrench = np.array([
+                -measured_contact_wench_list[0], 
+                -measured_contact_wench_list[1],
+                -measured_contact_wench_list[-1]])
+            measured_contact_wrench_rescaled=measured_contact_wrench * np.array(
+                [1., 1., (1/LNORMALIZE)])
+
+            # error wrench
+            error_wrench_rescaled = measured_contact_wrench_rescaled - nominal_contact_wrench_rescaled
+            null_space_wrench_rescaled = np.array([0, -LNORMALIZE, generalized_positions[0]]
+                )/np.sqrt(LNORMALIZE ** 2 + generalized_positions[0] ** 2)
+
+
+            # projection
+            wrench_error = np.dot(error_wrench_rescaled, null_space_wrench_rescaled) 
+
+            if measured_contact_wrench[0] > NORMAL_FORCE_THRESHOLD:
+                boundary1=(.8*.5*LCONTACT)-(measured_contact_wrench[2]/measured_contact_wrench[0])
+                boundary2=(.8*.5*LCONTACT)+(measured_contact_wrench[2]/measured_contact_wrench[0])
+
+                integrated_wrench_increment = wrench_error / RATE
+                if (boundary1<=0 and integrated_wrench_increment>0) or (boundary2<=0 and integrated_wrench_increment<0):
+                    integrated_wrench_increment=0
+                integrated_wrench_error+= integrated_wrench_increment
+            
+            integrated_wrench_error = np.minimum(np.maximum(integrated_wrench_error, -error_bound), error_bound)
+            correction_wrench_rescaled_null_space = -(Kp * wrench_error + Ki * integrated_wrench_error
+                ) * null_space_wrench_rescaled
+
+            # re-scaled correction
+            contact_wrench_rescaled =  correction_wrench_rescaled_null_space + nominal_contact_wrench_rescaled
+
+            # commanded wrench
+            contact_wrench = contact_wrench_rescaled
+            contact_wrench[-1]*= LNORMALIZE
+            robot_wrench = np.dot(contact2robot, contact_wrench)
 
             # make impedance target
-            impedance_target_delta= robot_wrench / np.array(IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
+            impedance_target_delta = robot_wrench / np.array(IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
+
             impedance_target = pbal_inv_model.pbal_helper.forward_kin(
                 contact_pose_target) + impedance_target_delta
 
@@ -349,31 +418,37 @@ if __name__ == '__main__':
             target_frame_pub.publish(frame_message)
             target_frame_broadcaster.sendTransform(frame_message)
 
+            # store time
+            t_list.append(t)
+
             # store end-effector pose
             end_effector_pose2D_list.append(generalized_positions)
 
             # store object-pose (from camera)
-            object_apriltag_pose_list = ros_helper.pose_stamped2list(object_apriltag_pose)
-            object_apriltag_rpy = tfm.euler_from_quaternion(object_apriltag_pose_list[3:])
-            object_pose2D_list.append([
-                object_apriltag_pose_list[0], 
-                object_apriltag_pose_list[2], 
-                object_apriltag_rpy[1]])
+            # object_apriltag_pose_list = ros_helper.pose_stamped2list(object_apriltag_pose)
+            # object_apriltag_rpy = tfm.euler_from_quaternion(object_apriltag_pose_list[3:])
+            # object_pose2D_list.append([
+            #     object_apriltag_pose_list[0], 
+            #     object_apriltag_pose_list[2], 
+            #     object_apriltag_rpy[1]])
 
             # store forces
-            end_effector_wrench_list = ros_helper.wrench_stamped2list(
-                end_effector_wrench)
-            end_effector_wrench2D_list.append([
-                end_effector_wrench_list[0], 
-                end_effector_wrench_list[1],
-                end_effector_wrench_list[-1]])
+            end_effector_wrench2D_list.append(measured_contact_wrench)
 
             # store friction
             robot_friction_coeff_list.append(robot_friction_coeff)
+
+            # store wrenches
+            nominal_contact_wrench_list.append(nominal_contact_wrench)
+            contact_wrench_list.append(contact_wrench)
+            wrench_error_list.append(wrench_error)
            
             rate.sleep()
 
     print('control loop completed')
+
+    # terminate rosbags
+    ros_helper.terminate_rosbag()
 
     # unsubscribe from topics
     pivot_xyz_sub.unregister()
@@ -388,35 +463,49 @@ if __name__ == '__main__':
     object_pose2D_array = np.array(object_pose2D_list)
     end_effector_wrench2D_array = np.array(end_effector_wrench2D_list)
     robot_friction_coeff_array = np.array(robot_friction_coeff_list)
+    nominal_contact_wrench_array = np.array(nominal_contact_wrench_list)
+    contact_wrench_array = np.array(contact_wrench_list)
+    wrench_error_array = np.array(wrench_error_list)
 
 
-    fig, axs = plt.subplots(3,1, figsize=(5, 9))
-    axs[0].plot(end_effector_pose2D_array[:, 0]- end_effector_pose2D_array[0, 0])
-    axs[0].set_title('Relative normal position (m)')
+    # fig, axs = plt.subplots(3,1, figsize=(5, 9))
+    # axs[0].plot(end_effector_pose2D_array[:, 0]- end_effector_pose2D_array[0, 0])
+    # axs[0].set_title('Relative normal position (m)')
     
-    axs[1].plot(end_effector_pose2D_array[:, 1])
-    axs[1].set_title('Relative tangential position (m)')
+    # axs[1].plot(end_effector_pose2D_array[:, 1])
+    # axs[1].set_title('Relative tangential position (m)')
     
-    axs[2].plot((end_effector_pose2D_array[:, 2] + object_pose2D_array[:, 2])
-        *(180/np.pi))
-    axs[2].set_title('Relative orientation (deg)')
+    # axs[2].plot((end_effector_pose2D_array[:, 2] + object_pose2D_array[:, 2])
+    #     *(180/np.pi))
+    # axs[2].set_title('Relative orientation (deg)')
 
-
+    print(np.mean(robot_friction_coeff_array))
     fig2, ax2 = plt.subplots(1,2, figsize=(9,9))
-    ax2[0].scatter(end_effector_wrench2D_array[:, 1], end_effector_wrench2D_array[:,0])
-    ax2[0].plot(np.mean(robot_friction_coeff_array)*np.array([0, -NMAX]), np.array([0, -NMAX]), color='k')
-    # ax2[0].plot(np.amax(robot_friction_coeff_array)*end_effector_wrench2D_array[:,0], 
-    #     end_effector_wrench2D_array[:,0], color='r')
-    ax2[0].plot(-np.mean(robot_friction_coeff_array)*np.array([0, -NMAX]), np.array([0, -NMAX]), color='k')
-    # ax2[0].plot(-np.amax(robot_friction_coeff_array)*end_effector_wrench2D_array[:,0], 
-    #     end_effector_wrench2D_array[:,0], color='r')
+    ax2[0].scatter(nominal_contact_wrench_array[:, 1], nominal_contact_wrench_array[:,0], c='m')
+    ax2[0].scatter(contact_wrench_array[:, 1], contact_wrench_array[:,0], c='g')
+    ax2[0].scatter(end_effector_wrench2D_array[:, 1], end_effector_wrench2D_array[:,0], c='b')
+    ax2[0].plot(np.mean(robot_friction_coeff_array)*np.array([0, NMAX]), np.array([0, NMAX]), color='k')
+    ax2[0].plot(-np.mean(robot_friction_coeff_array)*np.array([0, NMAX]), np.array([0, NMAX]), color='k')
     ax2[0].set_title('Tangential force')
 
-    ax2[1].scatter(end_effector_wrench2D_array[:, 2], end_effector_wrench2D_array[:,0])
-    ax2[1].plot(0.5*LCONTACT*np.array([0, -NMAX]), np.array([0, -NMAX]), color='k')
-    ax2[1].plot(-0.5*LCONTACT*np.array([0, -NMAX]), np.array([0, -NMAX]), color='k')
+    ax2[1].scatter(nominal_contact_wrench_array[:, 2], nominal_contact_wrench_array[:,0], c='m')
+    ax2[1].scatter(contact_wrench_array[:, 2], contact_wrench_array[:,0], c='g')
+    ax2[1].scatter(end_effector_wrench2D_array[:, 2], end_effector_wrench2D_array[:,0], c='b')
+    ax2[1].plot(0.5*LCONTACT*np.array([0, NMAX]), np.array([0, NMAX]), color='k')
+    ax2[1].plot(-0.5*LCONTACT*np.array([0, NMAX]), np.array([0, NMAX]), color='k')
     ax2[1].set_title('Torque')
 
+    normalization = [1., 1., 1./LCONTACT]
+    labels = ['Normal', 'Friction', 'Torque', 'Error']
+    fig3, ax3 = plt.subplots(4,1)
+    for i in range(3):
+        ax3[i].plot(t_array, normalization[i] * nominal_contact_wrench_array[:, i], 'm', label='nom')
+        ax3[i].plot(t_array, normalization[i] * contact_wrench_array[:, i], 'g', label='command')
+        ax3[i].plot(t_array, normalization[i] * end_effector_wrench2D_array[:, i], 'b', label='measured')
+        ax3[i].set_ylabel(labels[i])
+        ax3[i].legend()
+    ax3[3].plot(t_array, wrench_error_array, 'k')
+    ax3[3].set_ylabel(labels[3])
 
     # check with impedance model
     param_dict['obj_params']['pivot'] =  np.array([pivot_xyz[0], pivot_xyz[2]])
