@@ -256,7 +256,7 @@ if __name__ == '__main__':
     # mode 3: pivot sliding right, robot_sticking
     # mode not in [0, 3]: sticking, sticking
     delta_d = 0.0
-    delta_s = np.random.uniform(-0.03, 0.03)
+    delta_s = np.random.uniform(-0.05, 0.05)
     delta_theta = np.random.uniform(-np.pi/6, np.pi/6)
     delta_t = 10.
 

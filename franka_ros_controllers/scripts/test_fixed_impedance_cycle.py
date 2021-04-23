@@ -155,7 +155,7 @@ if __name__ == '__main__':
     LNORMALIZE = 1. #8 * LCONTACT
     MU_GROUND = 1.0
     MU_CONTACT = 0.2
-    IMPEDANCE_STIFFNESS_LIST = [1500, 1500, 1500, 150, 45, 150]
+    IMPEDANCE_STIFFNESS_LIST = [1000, 1000, 1000, 100, 30, 100]
     NMAX = 30
 
     # arm interface
@@ -223,109 +223,69 @@ if __name__ == '__main__':
     # set up transform broadcaster
     target_frame_broadcaster = tf2_ros.TransformBroadcaster()
 
-    # initial_franka_pose
-    initial_franka_pose = arm.endpoint_pose()
+    # initial pose
+    current_pose = {'position': np.array([0.52197304, 0.12474364, 0.11549901]), 
+        'orientation': np.quaternion(0.493506634658123, -0.473651410124478, 0.507279529281435, 0.5241879647679)}
+    adjusted_current_pose = copy.deepcopy(current_pose)
+    base_horizontal_pose = adjusted_current_pose['position'][0]
+    base_vertical_pose = adjusted_current_pose['position'][2] 
 
-    # waypoint trajectory
-    initial_generalized_positions = copy.deepcopy(generalized_positions)
+    # motion schedule
+    range_amplitude = 0.03
+    horizontal_pose_schedule =  np.concatenate((np.linspace(0,range_amplitude,5), 
+                                np.linspace(range_amplitude,-range_amplitude,10), 
+                                np.linspace(-range_amplitude,range_amplitude,10),
+                                np.linspace(range_amplitude,-range_amplitude,10),  
+                                np.linspace(-range_amplitude,range_amplitude,10),
+                                np.linspace(range_amplitude,-range_amplitude,10),                                
+                                np.linspace(-range_amplitude,0,5)))
 
-    # excursion    
-    # mode 0: sticking pivot, robot slide right 
-    # mode 1: sticking pivot, robot slide left
-    # mode 2: pivot sliding left, robot sticking
-    # mode 3: pivot sliding right, robot_sticking
-    # mode not in [0, 3]: sticking, sticking
-    d, s, theta, delta_t = -0.118, -0.02, 0.0, 3.
+    vertical_range_amplitude = 0.20
+    vertical_pose_schedule = np.concatenate((1.*vertical_range_amplitude*np.ones(5), 
+                                1.*vertical_range_amplitude*np.ones(10),
+                                1.*vertical_range_amplitude*np.ones(10), 
+                                1.*vertical_range_amplitude*np.ones(10),
+                                1.*vertical_range_amplitude*np.ones(10), 
+                                1.*vertical_range_amplitude*np.ones(10),                               
+                                1.*vertical_range_amplitude*np.ones(5)))
 
-    mode = -1
-
-    # build impedance model
-    obj_params = dict()
-    obj_params['pivot'] = np.array([pivot_xyz[0], pivot_xyz[2]])
-    obj_params['mgl'] = mgl
-    obj_params['theta0'] = theta0
-    obj_params['mu_contact'] = MU_CONTACT
-    obj_params['mu_ground'] = MU_GROUND
-    obj_params['l_contact'] = LCONTACT
-
-    # impedance parameters
-    param_dict = dict()
-    param_dict['obj_params'] = obj_params
-    param_dict['contact_pose_target'] = initial_generalized_positions
-    print(initial_generalized_positions)
-
-    # create inverse model
-    pbal_inv_model = PbalImpedanceInverseModel(param_dict)
+    schedule_length = horizontal_pose_schedule.shape[0]
 
     # lists
     t_list = []
     end_effector_pose2D_list = []
-    nominal_pose2D_list = []
 
+    tmax = 30
     start_time = rospy.Time.now().to_sec()
     print('starting control loop')
     while not rospy.is_shutdown():
 
-            # current time
-            t = rospy.Time.now().to_sec() - start_time
+        # current time
+        t = rospy.Time.now().to_sec() - start_time
 
-            if t > 1.5 * delta_t:
-                break
+        # end if t > tmax
+        if t > tmax:
+            break
 
-            # contact pose target
-            contact_pose_target = np.array([d, s, theta])
+        # move to next position on schedule
+        adjusted_current_pose['position'][0] = base_horizontal_pose + \
+            horizontal_pose_schedule[int(np.floor(schedule_length*t/tmax))]
 
-            # update pbal inv model
-            pbal_inv_model.contact_pose_target = contact_pose_target
+        adjusted_current_pose['position'][2] = base_vertical_pose - \
+            vertical_pose_schedule[int(np.floor(schedule_length*t/tmax))]
 
-            # make nominal wrench
-            sol = pbal_inv_model.solve_linear_program_mode_aux(NMAX, mode=mode)
-            try:
-                nominal_robot_wrench = sol[:3]
-            except IndexError:
-                print("couldn't find solution")
-                break
+        arm.set_cart_impedance_pose(adjusted_current_pose, 
+            stiffness=[1200, 600, 200, 100, 0, 100])        
 
-            # make impedance target
-            impedance_target_delta = nominal_robot_wrench / np.array(
-                IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
-            impedance_target = pbal_inv_model.pbal_helper.forward_kin(
-                contact_pose_target) + impedance_target_delta
+        # store time
+        t_list.append(t)
 
-            # make pose to send to franka
-            waypoint_pose_list = robot2_pose_list(impedance_target[0],
-                impedance_target[1],
-                impedance_target[2], 
-                pivot_xyz)
-
-            waypoint_franka_pose = franka_helper.list2franka_pose(
-                waypoint_pose_list)
-
-            # send command to franka
-            arm.set_cart_impedance_pose(waypoint_franka_pose, 
-                stiffness=IMPEDANCE_STIFFNESS_LIST) 
-
-            # pubish target frame
-            update_frame(ros_helper.list2pose_stamped(waypoint_pose_list), 
-                frame_message)
-            target_frame_pub.publish(frame_message)
-            target_frame_broadcaster.sendTransform(frame_message)
-
-
-            # store time
-            t_list.append(t)
-
-            # store end-effector pose
-            nominal_pose2D_list.append(contact_pose_target)
-            end_effector_pose2D_list.append(generalized_positions)
-
+        # store end-effector pose
+        end_effector_pose2D_list.append(generalized_positions)
            
-            rate.sleep()
+        rate.sleep()
 
     print('control loop completed')
-
-    # terminate rosbags
-    ros_helper.terminate_rosbag()
 
     # unsubscribe from topics
     pivot_xyz_sub.unregister()
@@ -334,20 +294,14 @@ if __name__ == '__main__':
     object_apriltag_pose_sub.unregister()
     robot_friction_coeff_sub.unregister()
 
-    # add impedance to param_dict
-    param_dict['impedance_target'] = impedance_target
-    param_dict['impedance_stiffness'] = np.array(
-                IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
-
     # create dictionary for pickling
     pickle_dict = {
         'time': t_list, 
-        'nominal': nominal_pose2D_list,
-        'estimated': end_effector_pose2D_list, 
-        'param_dict': param_dict}
+        'estimated': end_effector_pose2D_list}
 
 
-    directory = './Fixed_Impedance_Data'
+    directory = './Cycle_Impedance_Data'
+
     ct = 1
     filename = os.path.join(directory, 
         'data_' + '{:03d}'.format(ct) + '.pickle')

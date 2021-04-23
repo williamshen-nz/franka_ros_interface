@@ -36,6 +36,8 @@ if __name__ == '__main__':
 
     # original pose of robot
     current_pose = arm.endpoint_pose()
+
+    # print(current_pose)
     adjusted_current_pose = copy.deepcopy(current_pose)
 
     base_horizontal_pose = adjusted_current_pose['position'][0]
@@ -101,7 +103,7 @@ if __name__ == '__main__':
         arm.set_cart_impedance_pose(adjusted_current_pose, 
             stiffness=[1200, 600, 200, 100, 0, 100]) 
 
-        rate.sleep()    
+        rate.sleep()
 
     print('control loop completed')
 

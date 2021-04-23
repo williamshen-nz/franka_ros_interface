@@ -7,9 +7,7 @@ import tf2_ros
 import rospy
 import copy
 import pdb
-import pickle
 import matplotlib.pyplot as plt
-import os
 
 import ros_helper, franka_helper
 from franka_interface import ArmInterface 
@@ -112,6 +110,25 @@ def world_contact2_pose_list(x, y, theta, pivot):
     return ros_helper.pose_stamped2list(endpoint_pose)
 
 
+def compute_pose_error(dt, generalized_position, target_position, params, acculumated_error):
+
+    error = target_position - generalized_position
+
+    # don't integrate s error if s error < deadband
+    multiplier = np.array([0., 1])
+    if np.abs(error[1]) >= params['S_INTEGRATION_DEADBAND']:
+        multiplier = np.array([1., 1.])
+
+    # integrate s and theta error
+    acculumated_error+= multiplier*error[1:]
+
+    # compute error terms
+    Es = params['Kp_s']*error[1] + params['Ki_s']*acculumated_error[0]
+    Etheta = params['Kp_tht']*error[2] + params['Ki_tht']*acculumated_error[1]
+
+    return Es, Etheta, acculumated_error
+
+
 def pivot_xyz_callback(data):
     global pivot_xyz
     pivot_xyz =  [data.transform.translation.x,
@@ -143,7 +160,6 @@ def gravity_torque_callback(data):
     mgl = data.data
 
 
-
 if __name__ == '__main__':
 
     RATE = 30.
@@ -155,8 +171,9 @@ if __name__ == '__main__':
     LNORMALIZE = 1. #8 * LCONTACT
     MU_GROUND = 1.0
     MU_CONTACT = 0.2
-    IMPEDANCE_STIFFNESS_LIST = [1500, 1500, 1500, 150, 45, 150]
+    IMPEDANCE_STIFFNESS_LIST = [1000, 1000, 1000, 100, 30, 100]
     NMAX = 30
+    S_INTEGRATION_DEADBAND = 0.005
 
     # arm interface
     arm = ArmInterface()
@@ -203,6 +220,7 @@ if __name__ == '__main__':
     while end_effector_wrench is None:
         rospy.sleep(0.1)
 
+
     print("Waiting for robot_friction_coeff")
     while robot_friction_coeff is None:
         rospy.sleep(0.1)
@@ -223,21 +241,14 @@ if __name__ == '__main__':
     # set up transform broadcaster
     target_frame_broadcaster = tf2_ros.TransformBroadcaster()
 
-    # initial_franka_pose
-    initial_franka_pose = arm.endpoint_pose()
+    # target pose 
+    dt, st, theta_t, delta_t = generalized_positions[0], 0., np.pi/6, 20.
+    tagret_pose_contact_frame = np.array([dt, st, theta_t])
 
-    # waypoint trajectory
-    initial_generalized_positions = copy.deepcopy(generalized_positions)
-
-    # excursion    
-    # mode 0: sticking pivot, robot slide right 
-    # mode 1: sticking pivot, robot slide left
-    # mode 2: pivot sliding left, robot sticking
-    # mode 3: pivot sliding right, robot_sticking
-    # mode not in [0, 3]: sticking, sticking
-    d, s, theta, delta_t = -0.118, -0.02, 0.0, 3.
-
-    mode = -1
+    # integral controller
+    params = {'Kp_s': 0.0 , 'Ki_s': 0.0, 'Kp_tht': 1.0, 'Ki_tht': 0.005, 
+        'S_INTEGRATION_DEADBAND': S_INTEGRATION_DEADBAND}
+    accumulumated_error = np.zeros(2)    
 
     # build impedance model
     obj_params = dict()
@@ -251,20 +262,25 @@ if __name__ == '__main__':
     # impedance parameters
     param_dict = dict()
     param_dict['obj_params'] = obj_params
-    param_dict['contact_pose_target'] = initial_generalized_positions
-    print(initial_generalized_positions)
+    param_dict['contact_pose_target'] = generalized_positions # initialize to current position
 
     # create inverse model
     pbal_inv_model = PbalImpedanceInverseModel(param_dict)
 
-    # lists
+    # initialize lists for plotting
     t_list = []
-    end_effector_pose2D_list = []
     nominal_pose2D_list = []
+    end_effector_pose2D_list = []
+    robot_friction_coeff_list = []
+    error_pose_list = []
+    nominal_applied_wrench_robot = []
+
 
     start_time = rospy.Time.now().to_sec()
     print('starting control loop')
     while not rospy.is_shutdown():
+
+            current_generalized_position = copy.deepcopy(generalized_positions)
 
             # current time
             t = rospy.Time.now().to_sec() - start_time
@@ -272,25 +288,26 @@ if __name__ == '__main__':
             if t > 1.5 * delta_t:
                 break
 
-            # contact pose target
-            contact_pose_target = np.array([d, s, theta])
+            # compute error
+            Es, Etheta, accumulumated_error = compute_pose_error(1./RATE, current_generalized_position, 
+                tagret_pose_contact_frame, params, accumulumated_error)
 
-            # update pbal inv model
-            pbal_inv_model.contact_pose_target = contact_pose_target
+            # update target
+            pbal_inv_model.contact_pose_target = current_generalized_position
 
             # make nominal wrench
-            sol = pbal_inv_model.solve_linear_program_mode_aux(NMAX, mode=mode)
+            sol = pbal_inv_model.solve_linear_program_aux_feedback(
+                NMAX, Es, Etheta)
             try:
-                nominal_robot_wrench = sol[:3]
+                robot_wrench = sol[:3]
             except IndexError:
                 print("couldn't find solution")
                 break
 
             # make impedance target
-            impedance_target_delta = nominal_robot_wrench / np.array(
-                IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
+            impedance_target_delta = robot_wrench / np.array(IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
             impedance_target = pbal_inv_model.pbal_helper.forward_kin(
-                contact_pose_target) + impedance_target_delta
+                current_generalized_position) + impedance_target_delta
 
             # make pose to send to franka
             waypoint_pose_list = robot2_pose_list(impedance_target[0],
@@ -302,8 +319,7 @@ if __name__ == '__main__':
                 waypoint_pose_list)
 
             # send command to franka
-            arm.set_cart_impedance_pose(waypoint_franka_pose, 
-                stiffness=IMPEDANCE_STIFFNESS_LIST) 
+            arm.set_cart_impedance_pose(waypoint_franka_pose, stiffness=IMPEDANCE_STIFFNESS_LIST) 
 
             # pubish target frame
             update_frame(ros_helper.list2pose_stamped(waypoint_pose_list), 
@@ -311,14 +327,19 @@ if __name__ == '__main__':
             target_frame_pub.publish(frame_message)
             target_frame_broadcaster.sendTransform(frame_message)
 
-
             # store time
             t_list.append(t)
 
             # store end-effector pose
-            nominal_pose2D_list.append(contact_pose_target)
-            end_effector_pose2D_list.append(generalized_positions)
+            nominal_pose2D_list.append(tagret_pose_contact_frame)
+            end_effector_pose2D_list.append(current_generalized_position)
+            error_pose_list.append(np.array([Es, Etheta]))
 
+            # store wrench
+            nominal_applied_wrench_robot.append(robot_wrench)
+    
+            # store friction
+            robot_friction_coeff_list.append(robot_friction_coeff)
            
             rate.sleep()
 
@@ -334,31 +355,35 @@ if __name__ == '__main__':
     object_apriltag_pose_sub.unregister()
     robot_friction_coeff_sub.unregister()
 
-    # add impedance to param_dict
-    param_dict['impedance_target'] = impedance_target
-    param_dict['impedance_stiffness'] = np.array(
-                IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
+    # convert to array
+    t_array = np.array(t_list)
+    nominal_pose2D_array = np.array(nominal_pose2D_list)
+    end_effector_pose2D_array = np.array(end_effector_pose2D_list)
+    robot_friction_coeff_array = np.array(robot_friction_coeff_list)
+    error_pose_array = np.array(error_pose_list)
+    nominal_applied_wrench_robot_array = np.array(nominal_applied_wrench_robot)
 
-    # create dictionary for pickling
-    pickle_dict = {
-        'time': t_list, 
-        'nominal': nominal_pose2D_list,
-        'estimated': end_effector_pose2D_list, 
-        'param_dict': param_dict}
+    # pdb.set_trace()
 
 
-    directory = './Fixed_Impedance_Data'
-    ct = 1
-    filename = os.path.join(directory, 
-        'data_' + '{:03d}'.format(ct) + '.pickle')
-    while os.path.exists(filename):
-        ct+=1
-        filename = os.path.join(directory, 
-            'data_' + '{:03d}'.format(ct) + '.pickle')
+    labels = ['d', 's', 'theta']
+    fig, ax = plt.subplots(3,1)
+    for i in range(3):
+        ax[i].plot(t_array, nominal_pose2D_array[:, i], 'm', label='nom')
+        ax[i].plot(t_array, end_effector_pose2D_array[:, i], 'b', label='measured')
+        ax[i].set_ylabel(labels[i])
+        ax[i].legend()
 
-    with open(filename, 'wb') as handle:
-        pickle.dump(pickle_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    titles = ['s', 'theta']
+    fig2, ax2 = plt.subplots(2,1)
+    for i in range(2):
+        ax2[i].plot(t_array, error_pose_array[:, i], 'k')
+        ax2[i].set_title(titles[i])
 
+    titles = ['fx', 'fy', 'tau']
+    fig3, ax3 = plt.subplots(3,1)
+    for i in range(3):
+        ax3[i].plot(t_array, nominal_applied_wrench_robot_array[:, i], 'k')
+   
+    plt.show()
 
-
-    

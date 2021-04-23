@@ -185,6 +185,52 @@ class PbalImpedanceInverseModel(object):
 
         return robot_wrench
 
+    def solve_linear_program_aux_feedback(self, Nmax, Es, Etheta):
+
+        # add Etheta to static eq constraint to shift target
+        Aeq_aux, beq_aux = self.static_equilbrium_robot_aux()
+        beq_aux+=Etheta
+
+        # robot2contact = self.pbal_helper.contact2robot(
+        #     self.contact_pose_target)
+
+        # pdb.set_trace()
+
+        # # constraint ft = Es
+        # Afric_aux  = np.concatenate([np.dot(np.array([0., 1., 0.]), robot2contact), np.array([0.])])
+        # bfric_aux = np.array([Es])
+
+        # # combine eq constraints
+        # Aeq_aux = np.vstack([Aeq_aux, Afric_aux])
+        # beq_aux = np.concatenate([beq_aux, bfric_aux])
+        
+        # keep only torque constraints
+        Aline_aux, bline_aux = self.wrench_cone_constraints_line_robot_aux()
+        bline_aux[0]+= Es
+        bline_aux[1]-= Es
+        # Aline_aux, bline_aux = Aline_aux[2:, :], bline_aux[2:]
+
+        Apivot_aux, bpivot_aux = self.wrench_cone_constraint_pivot_robot_aux()
+        Anormal_aux, bnormal_aux = self.normal_force_constraint_robot_aux(Nmax)
+
+        # positive aux constraints
+        Aiq_aux = np.expand_dims(np.array([0., 0., 0., - 1]), axis=0)
+        biq_aux = np.array([0.])
+
+        Aiq = np.vstack([Aline_aux, Apivot_aux, Anormal_aux, Aiq_aux])
+        biq = np.concatenate([bline_aux, bpivot_aux, bnormal_aux, biq_aux])
+
+        beta = -1. 
+        cost = np.array([0., 0., 0., beta])
+
+        result2 = self.solve_lp_cvxopt(cost, Aeq_aux, beq_aux,
+                                       Aiq, biq)
+
+        robot_wrench = np.squeeze(np.array(result2['x']))
+
+        return robot_wrench
+
+
     def solve_linear_program_mode_aux(self, Nmax, mode=-1):
         '''
         mode 0: sticking pivot, robot slide right 
