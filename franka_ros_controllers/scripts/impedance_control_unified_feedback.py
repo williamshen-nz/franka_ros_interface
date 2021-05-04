@@ -121,6 +121,9 @@ def compute_pose_error(dt, generalized_position, target_position, params, acculu
 
     # integrate s and theta error
     acculumated_error+= multiplier*error[1:]
+    acculumated_error = np.clip(acculumated_error,
+        -params['POSITION_ERROR_BOUND'], params['POSITION_ERROR_BOUND'])
+    # acculumated_error*=0.1
 
     # compute error terms
     Es = params['Kp_s']*error[1] + params['Ki_s']*acculumated_error[0]
@@ -172,8 +175,10 @@ if __name__ == '__main__':
     MU_GROUND = 1.0
     MU_CONTACT = 0.2
     IMPEDANCE_STIFFNESS_LIST = [1000, 1000, 1000, 100, 30, 100]
-    NMAX = 30
+    NMAX = 20
     S_INTEGRATION_DEADBAND = 0.005
+    WRENCH_ERROR_BOUND = 20. * np.ones(3)
+
 
     # arm interface
     arm = ArmInterface()
@@ -220,7 +225,6 @@ if __name__ == '__main__':
     while end_effector_wrench is None:
         rospy.sleep(0.1)
 
-
     print("Waiting for robot_friction_coeff")
     while robot_friction_coeff is None:
         rospy.sleep(0.1)
@@ -242,13 +246,16 @@ if __name__ == '__main__':
     target_frame_broadcaster = tf2_ros.TransformBroadcaster()
 
     # target pose 
-    dt, st, theta_t, delta_t = generalized_positions[0], 0., np.pi/6, 20.
+    dt, st, theta_t, delta_t = generalized_positions[0], 0.00, 0., 10.
     tagret_pose_contact_frame = np.array([dt, st, theta_t])
 
     # integral controller
-    params = {'Kp_s': 0.0 , 'Ki_s': 0.0, 'Kp_tht': 1.0, 'Ki_tht': 0.005, 
-        'S_INTEGRATION_DEADBAND': S_INTEGRATION_DEADBAND}
+    params = {'Kp_s': 0.0 , 'Ki_s': 0.0, 'Kp_tht': 0.4, 'Ki_tht': 0.1, 
+        'S_INTEGRATION_DEADBAND': S_INTEGRATION_DEADBAND, 
+        'POSITION_ERROR_BOUND': np.array([10., 1.])}
+    Kp, Ki = 0.2, 1.0
     accumulumated_error = np.zeros(2)    
+    integrated_error_wrench = np.zeros(3)
 
     # build impedance model
     obj_params = dict()
@@ -262,7 +269,7 @@ if __name__ == '__main__':
     # impedance parameters
     param_dict = dict()
     param_dict['obj_params'] = obj_params
-    param_dict['contact_pose_target'] = generalized_positions # initialize to current position
+    param_dict['contact_pose_target'] = tagret_pose_contact_frame # initialize to current position
 
     # create inverse model
     pbal_inv_model = PbalImpedanceInverseModel(param_dict)
@@ -273,7 +280,9 @@ if __name__ == '__main__':
     end_effector_pose2D_list = []
     robot_friction_coeff_list = []
     error_pose_list = []
-    nominal_applied_wrench_robot = []
+    nominal_applied_wrench_contact_list = []
+    measured_wrench_contact_list = []
+    slack_list = []
 
 
     start_time = rospy.Time.now().to_sec()
@@ -289,23 +298,53 @@ if __name__ == '__main__':
                 break
 
             # compute error
-            Es, Etheta, accumulumated_error = compute_pose_error(1./RATE, current_generalized_position, 
-                tagret_pose_contact_frame, params, accumulumated_error)
+            Es, Etheta, accumulumated_error = compute_pose_error(1./RATE, 
+                current_generalized_position, tagret_pose_contact_frame, 
+                params, accumulumated_error)
 
             # update target
-            pbal_inv_model.contact_pose_target = current_generalized_position
+            # pbal_inv_model.contact_pose_target = current_generalized_position
 
             # make nominal wrench
-            sol = pbal_inv_model.solve_linear_program_aux_feedback(
+            sol, slack = pbal_inv_model.solve_linear_program_aux_feedback(
                 NMAX, Es, Etheta)
             try:
-                robot_wrench = sol[:3]
+                robot_wrench = sol[:3]                
             except IndexError:
                 print("couldn't find solution")
                 break
 
+            # nominal contact wrench
+            contact2robot = pbal_inv_model.pbal_helper.contact2robot(
+                current_generalized_position)
+            contact_wrench = np.dot(contact2robot, robot_wrench)
+
+            # measured contact wrench
+            measured_contact_wench_6D = ros_helper.wrench_stamped2list(end_effector_wrench)
+            measured_contact_wrench = -np.array([
+                measured_contact_wench_6D[0], 
+                measured_contact_wench_6D[1],
+                measured_contact_wench_6D[-1]])
+            measured_wrench_contact_list.append(measured_contact_wrench)
+
+            # error wrench
+            error_wrench = measured_contact_wrench - contact_wrench
+            error_wrench_increment = error_wrench / RATE
+            integrated_error_wrench += error_wrench_increment
+            integrated_error_wrench  = np.clip(integrated_error_wrench,
+                -WRENCH_ERROR_BOUND, WRENCH_ERROR_BOUND)
+
+            # correction wrench
+            correction_wrench = -Kp * error_wrench - Ki * integrated_error_wrench 
+
+            # total commanded wrench
+            commanded_wrench_contact = contact_wrench + correction_wrench
+            commanded_wrench_robot = np.dot(contact2robot, commanded_wrench_contact)
+            # commanded_wrench_robot_6D = np.array([commanded_wrench_robot[0], 
+                # 0., commanded_wrench_robot[1], 0., commanded_wrench_robot[-1], 0.])
+            
             # make impedance target
-            impedance_target_delta = robot_wrench / np.array(IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
+            impedance_target_delta = commanded_wrench_robot / np.array(IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
             impedance_target = pbal_inv_model.pbal_helper.forward_kin(
                 current_generalized_position) + impedance_target_delta
 
@@ -319,7 +358,9 @@ if __name__ == '__main__':
                 waypoint_pose_list)
 
             # send command to franka
-            arm.set_cart_impedance_pose(waypoint_franka_pose, stiffness=IMPEDANCE_STIFFNESS_LIST) 
+            arm.set_cart_impedance_pose(waypoint_franka_pose,
+                stiffness=IMPEDANCE_STIFFNESS_LIST)
+            # arm.exert_force(commanded_wrench_robot_6D)
 
             # pubish target frame
             update_frame(ros_helper.list2pose_stamped(waypoint_pose_list), 
@@ -335,11 +376,15 @@ if __name__ == '__main__':
             end_effector_pose2D_list.append(current_generalized_position)
             error_pose_list.append(np.array([Es, Etheta]))
 
-            # store wrench
-            nominal_applied_wrench_robot.append(robot_wrench)
+            nominal_applied_wrench_contact_list.append(np.dot(contact2robot, 
+                robot_wrench))
+
     
             # store friction
             robot_friction_coeff_list.append(robot_friction_coeff)
+
+            # store slacks from LP
+            slack_list.append(slack)
            
             rate.sleep()
 
@@ -361,10 +406,10 @@ if __name__ == '__main__':
     end_effector_pose2D_array = np.array(end_effector_pose2D_list)
     robot_friction_coeff_array = np.array(robot_friction_coeff_list)
     error_pose_array = np.array(error_pose_list)
-    nominal_applied_wrench_robot_array = np.array(nominal_applied_wrench_robot)
-
-    # pdb.set_trace()
-
+    nominal_applied_wrench_contact_array = np.array(
+        nominal_applied_wrench_contact_list)
+    measured_wrench_contact_array = np.array(measured_wrench_contact_list)
+    slack_array = np.array(slack_list)
 
     labels = ['d', 's', 'theta']
     fig, ax = plt.subplots(3,1)
@@ -372,7 +417,7 @@ if __name__ == '__main__':
         ax[i].plot(t_array, nominal_pose2D_array[:, i], 'm', label='nom')
         ax[i].plot(t_array, end_effector_pose2D_array[:, i], 'b', label='measured')
         ax[i].set_ylabel(labels[i])
-        ax[i].legend()
+        # ax[i].legend()
 
     titles = ['s', 'theta']
     fig2, ax2 = plt.subplots(2,1)
@@ -380,10 +425,16 @@ if __name__ == '__main__':
         ax2[i].plot(t_array, error_pose_array[:, i], 'k')
         ax2[i].set_title(titles[i])
 
-    titles = ['fx', 'fy', 'tau']
+    titles = ['fn', 'ft', 'tau']
     fig3, ax3 = plt.subplots(3,1)
     for i in range(3):
-        ax3[i].plot(t_array, nominal_applied_wrench_robot_array[:, i], 'k')
-   
+        ax3[i].plot(t_array, nominal_applied_wrench_contact_array[:, i], 'k')
+        ax3[i].plot(t_array, measured_wrench_contact_array[:, i], 'b')
+        ax3[i].set_title(titles[i])
+
+    fig4, ax4 = plt.subplots(1,1)
+    for i in range(slack_array.shape[1]): 
+        ax4.plot(t_array, slack_array[:, i], label=str(i))
+    ax4.legend()
     plt.show()
 

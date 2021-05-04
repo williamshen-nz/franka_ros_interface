@@ -160,15 +160,15 @@ if __name__ == '__main__':
 
     # constants
     LCONTACT = 0.065
-    LNORMALIZE = 1. #8 * LCONTACT
+    # LNORMALIZE = 1. #8 * LCONTACT
     MU_GROUND = 1.0
-    MU_CONTACT = 0.2
-    THETA_INT_LIM = 50.   
-    S_INT_LIM = 10.
+    MU_CONTACT = 0.1
+    # THETA_INT_LIM = 50.   
+    # S_INT_LIM = 10.
     IMPEDANCE_STIFFNESS_LIST = [1000, 1000, 1000, 100, 30, 100]
     # IMPEDANCE_STIFFNESS_LIST = [300, 300, 300, 100, 10, 100]
     # Minimum required normal force
-    NORMAL_FORCE_THRESHOLD = .05
+    # NORMAL_FORCE_THRESHOLD = .05
     NMAX = 30
 
 
@@ -252,27 +252,15 @@ if __name__ == '__main__':
     initial_generalized_positions = copy.deepcopy(generalized_positions)
 
     # excursion    
-    # mode 0: sticking pivot, robot slide right 
-    # mode 1: sticking pivot, robot slide left
+    # mode 0: sticking pivot, robot slide right (positive)
+    # mode 1: sticking pivot, robot slide left (negative)
     # mode 2: pivot sliding left, robot sticking
     # mode 3: pivot sliding right, robot_sticking
     # mode not in [0, 3]: sticking, sticking
     delta_d, delta_s, delta_theta, delta_t \
-     = 0.0, 0.00, np.pi/6, 10.
+     = 0.0, 0.00, 0.0, 10.
 
-    mode = -1
-
-    if delta_s>0:
-        RuntimeError("not implemented")
-    if delta_s<0:
-        RuntimeError("not implemented")
-
-    # integral controller
-    Kp, Ki = 0.2, 5. #0.0
-    Kp_tht, Ki_tht = 100.0, 20.0
-    integrated_wrench_error_rescaled = np.zeros(3)
-    theta_error_integrated = 0.0
-    ERROR_BOUND = 20*np.array([1., 1., 1.])
+    mode = 0
 
     # build impedance model
     obj_params = dict()
@@ -299,9 +287,39 @@ if __name__ == '__main__':
     robot_friction_coeff_list = []
     nominal_contact_wrench_list = []
     contact_wrench_list = []
-    wrench_error_list = []
-    wrench_from_impedance_list = []
+    # wrench_error_list = []
+    # wrench_from_impedance_list = []
     nominal_pose2D_list = []
+    # projected_error_list = []
+    # wrench_normal_list = []
+
+    # make nominal wrench
+    sol = pbal_inv_model.solve_linear_program_mode_aux(NMAX, mode=mode)
+    try:
+        nominal_robot_wrench = sol[:3]
+    except IndexError:
+        raise RuntimeError("couldn't find solution")
+
+    
+    # projection
+    d, s = generalized_positions[0], generalized_positions[1]
+    if mode == 0:
+        # wrench_control_normal = np.array([-1. , 0., 1./(s - d*MU_CONTACT)])
+        # wrench_control_normal = np.array([1. , 0., s])
+        # wrench_control_normal = -np.array([0. , 1., -d])
+        wrench_control_normal = np.array([0. , 1., 0.])
+    elif mode == 1:
+        # wrench_control_normal = np.array([1. , 0., s])
+        wrench_control_normal = np.array([0. , 1., 0.])
+        # wrench_control_normal = np.array([0. , 1., -d])
+        # wrench_control_normal = np.array([1. , 0., -1/s])
+        # wrench_control_normal = np.array([-1. , 0., 1./(s + d*MU_CONTACT)])               
+    else:
+        raise RuntimeError("not implemented")
+
+    unit_wrench_control_normal = wrench_control_normal/np.linalg.norm(
+        wrench_control_normal, ord=2)
+
 
     start_time = rospy.Time.now().to_sec()
     print('starting control loop')
@@ -326,20 +344,11 @@ if __name__ == '__main__':
             pbal_inv_model.contact_pose_target = contact_pose_target
             # pbal_inv_model.pbal_helper.pivot = np.array([pivot_xyz[0], pivot_xyz[2]])
 
-            # make nominal wrench
-            sol = pbal_inv_model.solve_linear_program_mode_aux(NMAX, mode=mode)
-            try:
-                nominal_robot_wrench = sol[:3]
-            except IndexError:
-                print("couldn't find solution")
-                break
 
             # put wrench in robot frame and re-scale
             contact2robot = pbal_inv_model.pbal_helper.contact2robot(
                 generalized_positions)
             nominal_contact_wrench = np.dot(contact2robot, nominal_robot_wrench)
-            nominal_contact_wrench_rescaled = nominal_contact_wrench * np.array(
-                [1., 1., (1/LNORMALIZE)])
 
             # build and re-scale measured wrench
             measured_contact_wench_list = ros_helper.wrench_stamped2list(end_effector_wrench)
@@ -347,62 +356,20 @@ if __name__ == '__main__':
                 measured_contact_wench_list[0], 
                 measured_contact_wench_list[1],
                 measured_contact_wench_list[-1]])
-            measured_contact_wrench_rescaled=measured_contact_wrench * np.array(
-                [1., 1., (1/LNORMALIZE)])
-
-            # error wrench
-            error_wrench_rescaled = measured_contact_wrench_rescaled - nominal_contact_wrench_rescaled
-            error_wrench = error_wrench_rescaled * np.array([1., 1., LNORMALIZE])
-
-            # projection
-            d, s = generalized_positions[0], generalized_positions[1]
-            static_equilibrium_normal = np.array([s, -d, -LNORMALIZE])
-            unit_static_equilibrium_normal = static_equilibrium_normal/np.linalg.norm(
-                static_equilibrium_normal, ord=2)
-
-            # error wrench in plane of static equilibrium constraint
-            error_wrench_rescaled_projected = error_wrench_rescaled - np.dot(
-                error_wrench_rescaled, unit_static_equilibrium_normal) * unit_static_equilibrium_normal
-
-            # compute and clip integral term
-            integrated_wrench_increment = error_wrench_rescaled_projected / RATE
-            integrated_wrench_error_rescaled += integrated_wrench_increment
-            integrated_wrench_error_rescaled = integrated_wrench_error_rescaled - np.dot(
-                integrated_wrench_error_rescaled, unit_static_equilibrium_normal) * unit_static_equilibrium_normal
-            integrated_wrench_error_rescaled  = np.clip(integrated_wrench_error_rescaled,
-                -ERROR_BOUND, ERROR_BOUND)
-
-            # compute correction and nominal wrench
-            correction_wrench_rescaled = - Kp * error_wrench_rescaled_projected - Ki * integrated_wrench_error_rescaled 
-            
-            # pose error
-            theta_error = generalized_positions[2] - contact_pose_target[2]
-            theta_error_integrated += theta_error / RATE
-            theta_error_integrated = np.maximum(np.minimum(theta_error_integrated,
-                THETA_INT_LIM), -THETA_INT_LIM)
-
-            # correction due to theta error
-            correction_wrench_theta_rescaled = -(Kp_tht * theta_error + Ki_tht * theta_error_integrated
-                ) * -unit_static_equilibrium_normal
-
-            contact_wrench_rescaled = nominal_contact_wrench_rescaled + correction_wrench_rescaled + \
-                correction_wrench_theta_rescaled
 
             # commanded wrench
-            contact_wrench = contact_wrench_rescaled
-            contact_wrench[-1]*= LNORMALIZE
+            contact_wrench = nominal_contact_wrench - 20. * (t/delta_t) * unit_wrench_control_normal
             robot_wrench = np.dot(contact2robot, contact_wrench)
 
             # make impedance target
             impedance_target_delta = robot_wrench / np.array(IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
-
             impedance_target = pbal_inv_model.pbal_helper.forward_kin(
                 contact_pose_target) + impedance_target_delta
-            current_position_robot = pbal_inv_model.pbal_helper.forward_kin(
-                generalized_positions)
-            impedance_wrench_robot = np.array(IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]*(
-               impedance_target - current_position_robot)
-            impedance_wrench_contact = np.dot(contact2robot, impedance_wrench_robot)
+            # current_position_robot = pbal_inv_model.pbal_helper.forward_kin(
+            #     generalized_positions)
+            # impedance_wrench_robot = np.array(IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]*(
+            #    impedance_target - current_position_robot)
+            # impedance_wrench_contact = np.dot(contact2robot, impedance_wrench_robot)
 
             # make pose to send to franka
             waypoint_pose_list = robot2_pose_list(impedance_target[0],
@@ -425,21 +392,25 @@ if __name__ == '__main__':
             # store time
             t_list.append(t)
 
-            # store end-effector pose
+            # # store end-effector pose
             nominal_pose2D_list.append(contact_pose_target)
             end_effector_pose2D_list.append(generalized_positions)
 
-            # store forces
+            # # store forces
             end_effector_wrench2D_list.append(measured_contact_wrench)
 
             # store friction
             robot_friction_coeff_list.append(robot_friction_coeff)
 
-            # store wrenches
+            # # store wrenches
             nominal_contact_wrench_list.append(nominal_contact_wrench)
             contact_wrench_list.append(contact_wrench)
-            wrench_error_list.append(error_wrench)
-            wrench_from_impedance_list.append(impedance_wrench_contact)
+            # # wrench_error_list.append(error_wrench)
+            # wrench_from_impedance_list.append(impedance_wrench_contact)
+
+            # store errors
+            # projected_error_list.append(projected_error)
+            # wrench_normal_list.append(unit_wrench_control_normal)
            
             rate.sleep()
 
@@ -463,9 +434,12 @@ if __name__ == '__main__':
     robot_friction_coeff_array = np.array(robot_friction_coeff_list)
     nominal_contact_wrench_array = np.array(nominal_contact_wrench_list)
     contact_wrench_array = np.array(contact_wrench_list)
-    wrench_error_array = np.array(wrench_error_list)
-    wrench_from_impedance_array = np.array(wrench_from_impedance_list)
+    # wrench_error_array = np.array(wrench_error_list)
+    # wrench_from_impedance_array = np.array(wrench_from_impedance_list)
     nominal_pose2D_array = np.array(nominal_pose2D_list)
+    # projected_error_array = np.array(projected_error_list)
+    # wrench_normal_array = np.array(wrench_normal_list)
+
 
     # fig, axs = plt.subplots(3,1, figsize=(5, 9))
     # axs[0].plot(end_effector_pose2D_array[:, 0]- end_effector_pose2D_array[0, 0])
@@ -492,6 +466,8 @@ if __name__ == '__main__':
     ax2[1].scatter(end_effector_wrench2D_array[:, 2], end_effector_wrench2D_array[:,0], c='b')
     ax2[1].plot(0.5*LCONTACT*np.array([0, NMAX]), np.array([0, NMAX]), color='k')
     ax2[1].plot(-0.5*LCONTACT*np.array([0, NMAX]), np.array([0, NMAX]), color='k')
+    # for i in range(wrench_normal_array.shape[0]):
+        # ax2[1].arrow(x=0, y=0, dx=wrench_normal_array[i, 2], dy=wrench_normal_array[i, 0])
     ax2[1].set_title('Torque')
 
     normalization = [1., 1., 1.]
@@ -501,11 +477,14 @@ if __name__ == '__main__':
         ax3[i].plot(t_array, normalization[i] * nominal_contact_wrench_array[:, i], 'm', label='nom')
         ax3[i].plot(t_array, normalization[i] * contact_wrench_array[:, i], 'g', label='command')
         ax3[i].plot(t_array, normalization[i] * end_effector_wrench2D_array[:, i], 'b', label='measured')
-        ax3[i].plot(t_array, normalization[i] * wrench_from_impedance_array[:, i], 'k', label='from impedance')
+        # ax3[i].plot(t_array, normalization[i] * wrench_from_impedance_array[:, i], 'k', label='from impedance')
         ax3[i].set_ylabel(labels[i])
         ax3[i].legend()
-    ax3[3].plot(t_array, wrench_error_array, 'c')
+        plt.grid()
+    # ax3[3].plot(t_array, projected_error_array, 'c')
     ax3[3].set_ylabel(labels[3])
+    plt.grid()
+
 
 
     labels = ['d', 's', 'theta']
@@ -515,7 +494,7 @@ if __name__ == '__main__':
         ax4[i].plot(t_array, end_effector_pose2D_array[:, i], 'b', label='measured')
         ax4[i].set_ylabel(labels[i])
         ax4[i].legend()
-
+        plt.grid()
     # # check with impedance model
     # param_dict['obj_params']['pivot'] =  np.array([pivot_xyz[0], pivot_xyz[2]])
     # param_dict['impedance_stiffness'] = np.array(IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]

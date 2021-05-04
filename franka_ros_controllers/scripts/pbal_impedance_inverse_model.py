@@ -228,7 +228,12 @@ class PbalImpedanceInverseModel(object):
 
         robot_wrench = np.squeeze(np.array(result2['x']))
 
-        return robot_wrench
+        try:       
+            slack = np.dot(Aiq, robot_wrench) - biq
+        except TypeError:
+            slack = None
+
+        return robot_wrench, slack
 
 
     def solve_linear_program_mode_aux(self, Nmax, mode=-1):
