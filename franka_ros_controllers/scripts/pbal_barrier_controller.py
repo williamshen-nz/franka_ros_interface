@@ -2,12 +2,15 @@ import copy
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from cvxopt import matrix, solvers
+solvers.options['show_progress'] = False
 import pdb
 
 from pbal_helper import PbalHelper
 
 
 class PbalBarrierController(object):
+
     def __init__(self, param_dict):
 
         # object parameters
@@ -46,92 +49,112 @@ class PbalBarrierController(object):
 
         Aiq = np.vstack([Aiq, Aiq_pivot_contact]) # pivot friction 
 
-        pdb.set_trace()
         return np.dot(Aiq, measured_wrench) - biq, Aiq
 
     def barrier_function_values(self, slacks):
         ''' evaluates barrier function f = exp(k*slacks) '''
 
         k = self.exponential_time_constant
-        return np.exp(k*slacks)
+        return -k*slacks
 
-    def qp_cost_values(self, contact_pose, contact_delta, mode):
+    def qp_cost_values(self, contact_pose, delta_contact_pose, mode):
+        ''' computes cost function for the QP '''
 
+        # unpack
+        d, s, theta = contact_pose[0], contact_pose[1], contact_pose[2]
+        delta_s, delta_theta = delta_contact_pose[1], delta_contact_pose[2]
+
+        # theta error cost
+        a1 = np.array([-s, d, 1.])
+        b1 = self.K_theta * delta_theta
+        P = np.outer(a1, a1)
+        q = -2 * a1 * b1
+            
+        if mode == -1:   # sticking, sticking
+            pass
+        elif mode == 0:    # sticking pivot, robot slide right
+
+            # s error cost slide right
+            a2 = self.K_s * delta_s
+            b2 = np.array([self.pbal_helper.mu_contact, 1., 0.])
+            P  = P + np.outer(a2, a2)
+            q  = q - 2 * a2 * b2
+
+        elif mode == 1:    # sticking pivot, robot slide left
+
+            # s error slide left
+            a2 = self.K_s * delta_s
+            b2 = np.array([self.pbal_helper.mu_contact, -1., 0.])
+            P  = P + np.outer(a2, a2)
+            q  = q - 2 * a2 * b2
+        else:
+            raise RuntimeError("Invalid mode: must be -1, 0, or 1")
+
+        return P, q
         
 
-    def solve_qp(self, slacks, measured_wrench, 
-        contact_pose, delta_contact_pose, mode, Nmax):
+    def solve_qp(self, measured_wrench, contact_pose, 
+        delta_contact_pose, mode, Nmax):
         '''
         mode -1: sticking, sticking
         mode 0: sticking pivot, robot slide right 
         mode 1: sticking pivot, robot slide left
         mode not in [0, 1]: 
         ''' 
+
+        # compute cost
+        P, q = self.qp_cost_values(contact_pose, 
+            delta_contact_pose, mode)
+
+        # compute slacks
+        slacks = self.compute_slack_values(contact_pose, 
+            measured_wrench, Nmax)
+
+        # compute iq constraint slacks and normals
         slacks, normals = self.compute_slack_values(contact_pose, 
             measured_wrench, Nmax)
 
+        # compute valube of barrier functi
         fbarrier = self.barrier_function_values(slacks)
 
-        d, s, theta = contact_pose[0], contact_pose[1], contact_pose[2]
-
-
-
-        if mode == 0:
-            
-            # inequality constraints
-            Aiq = fbarrier[2:6] * normals[2:6, :]
-            biq = -slacks[2:6]
-            
-            s_control_direction = np.array([
-                self.pbal_helper.mu_contact, 1, 0])
-            theta_control_direction = np.array([-s/d, 1, 1/d]) 
-
-
-        elif mode == 1:
-            
-            # inequality constraints
-            Aiq = fbarrier[2:6] * normals[2:6, :]
-            biq = -slacks[2:6]
-
-            s_control_direction = np.array([
-                -self.pbal_helper.mu_contact, 1, 0])
-            theta_control_direction = np.array([-s/d, 1, 1/d])
-
-        elif mode == -1:
+        # select constraints
+        if mode == -1: # sticking, sticking
 
             # inequality constraints
-            Aiq = fbarrier * normals
-            biq = -slacks
+            Aiq = normals
+            biq = fbarrier
 
-            theta_control_direction = np.array([-s/d, 1, 1/d])
+        elif mode == 0: # sticking pivot, robot slide right 
+            
+            # inequality constraints
+            Aiq = normals[2:6, :]
+            biq = fbarrier[2:6]
 
-        result = solve_qp_cvxopt(P, q, [], [], Aiq, biq)
+        elif mode == 1: # sticking pivot, robot slide left 
+            
+            # inequality constraints
+            Aiq = normals[2:6, :]
+            biq = fbarrier[2:6]
+
+        else:
+            raise RuntimeError("Invalid mode: must be -1, 0, or 1")   
 
 
+        result = self.solve_qp_cvxopt(P, q, Aiq, biq)
+        return np.squeeze(np.array(result['x']))
 
 
-    def solve_qp_cvxopt(self, Q, q, Aeq, beq, Aiq, biq):
+    def solve_qp_cvxopt(self, P, q, Aiq, biq):
 
-        Q_cvxopt = matrix(Q)
+        P_cvxopt = matrix(2 * P)
         q_cvxopt = matrix(q)
-
-        Aeq_cvxopt = matrix(Aeq)
-        beq_cvxopt = matrix(beq)
-
+        
         Aiq_cvxopt = matrix(Aiq)
         biq_cvxopt = matrix(biq)
 
-        result = solvers.lp(Q_cvxopt, q_cvxopt, Aiq_cvxopt, biq_cvxopt, Aeq_cvxopt,
-                            beq_cvxopt)
+        result = solvers.qp(P_cvxopt, q_cvxopt,
+            Aiq_cvxopt, biq_cvxopt)
         return result
-
-
-
-
-
-
-
-
 
 
 if __name__ == "__main__":
@@ -142,7 +165,7 @@ if __name__ == "__main__":
     obj_params['mgl'] = .6
     obj_params['theta0'] = np.pi/12
     obj_params['mu_contact'] = 0.3
-    obj_params['mu_ground'] = 0.3
+    obj_params['mu_ground'] = 0.75
     obj_params['l_contact'] = 0.065
 
     # position control parameters
@@ -150,13 +173,18 @@ if __name__ == "__main__":
     param_dict['obj_params'] = obj_params
     param_dict['K_theta'] = 1.
     param_dict['K_s'] = 1.
+    param_dict['exponential_time_constant'] = 1.
 
     pbc = PbalBarrierController(param_dict)
 
     measured_wrench = np.array([10., 1., .1])
     contact_pose = np.array([0.1, 0.1, 0.1])
+    delta_contact_pose = np.array([0, 0.01, 0.2])
+    mode = -1
 
-    slacks, normals = pbc.compute_slack_values(
-        contact_pose, measured_wrench, 20)
+    result = pbc.solve_qp(measured_wrench, contact_pose, 
+        delta_contact_pose, mode, 20.)
+
+
 
     pdb.set_trace()
