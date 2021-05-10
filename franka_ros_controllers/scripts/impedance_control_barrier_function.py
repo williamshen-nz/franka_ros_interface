@@ -221,7 +221,7 @@ if __name__ == '__main__':
     # target pose 
     # initial_generalized_positions = generalized_positions
     print(generalized_positions)
-    dt, st, theta_t, delta_t = generalized_positions[0], -0.08, np.pi/6, 10.
+    dt, st, theta_t, delta_t = generalized_positions[0], -0.04, 0.0, 10.
     tagret_pose_contact_frame = np.array([dt, st, theta_t])
     
     # only works for sticking
@@ -240,7 +240,7 @@ if __name__ == '__main__':
     param_dict = dict()
     param_dict['obj_params'] = obj_params
     param_dict['K_theta'] = 10.0
-    param_dict['K_s'] = 10.
+    param_dict['K_s'] = 15.
     param_dict['exponential_time_constant'] = 10.
     param_dict['concavity_rotating'] = 1.
     param_dict['concavity_sliding'] = 4.
