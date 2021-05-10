@@ -19,6 +19,8 @@ class PbalBarrierController(object):
         # position control parameters
         self.K_theta = param_dict['K_theta']
         self.K_s = param_dict['K_s']
+        self.concavity_sliding = param_dict['concavity_sliding']
+        self.concavity_rotating = param_dict['concavity_rotating']
 
         # barrier function parameters
         self.exponential_time_constant = param_dict[
@@ -65,7 +67,8 @@ class PbalBarrierController(object):
         delta_s, delta_theta = delta_contact_pose[1], delta_contact_pose[2]
 
         # theta error cost
-        a1 = np.array([-s, d, 1.])
+        a1 = self.concavity_rotating * np.array([-s, d, 1.])
+        # a1 = np.array([-s, d, 1.])
         b1 = self.K_theta * delta_theta
         P = np.outer(a1, a1)
         q = -2 * a1 * b1
@@ -75,16 +78,20 @@ class PbalBarrierController(object):
         elif mode == 0:    # sticking pivot, robot slide right
 
             # s error cost slide right
-            a2 = self.K_s * delta_s
-            b2 = np.array([self.pbal_helper.mu_contact, 1., 0.])
+            a2 = self.concavity_sliding * np.array(
+                [self.pbal_helper.mu_contact, 1., 0.])
+            # a2 = np.array([self.pbal_helper.mu_contact, 1., 0.])
+            b2 = self.K_s * delta_s
             P  = P + np.outer(a2, a2)
             q  = q - 2 * a2 * b2
 
         elif mode == 1:    # sticking pivot, robot slide left
 
             # s error slide left
-            a2 = self.K_s * delta_s
-            b2 = np.array([self.pbal_helper.mu_contact, -1., 0.])
+            a2 = self.concavity_sliding * np.array(
+                [self.pbal_helper.mu_contact, -1., 0.])
+            # a2 = np.array([self.pbal_helper.mu_contact, -1., 0.])
+            b2 = self.K_s * delta_s
             P  = P + np.outer(a2, a2)
             q  = q - 2 * a2 * b2
         else:
@@ -102,6 +109,16 @@ class PbalBarrierController(object):
         mode not in [0, 1]: 
         ''' 
 
+        # set mu at robot contact
+        mu_contact = self.pbal_helper.mu_contact        
+        if mode == -1:
+            pass
+        elif mode == 0 or mode == 1:
+            self.pbal_helper.mu_contact *= 5.
+            # print(self.pbal_helper.mu_contact)
+        else:
+            raise RuntimeError("Invalid mode: must be -1, 0, or 1")   
+
         # compute cost
         P, q = self.qp_cost_values(contact_pose, 
             delta_contact_pose, mode)
@@ -116,31 +133,18 @@ class PbalBarrierController(object):
 
         # compute valube of barrier functi
         fbarrier = self.barrier_function_values(slacks)
+  
+        # inequality constraints
+        Aiq = normals
+        biq = fbarrier
 
-        # select constraints
-        if mode == -1: # sticking, sticking
-
-            # inequality constraints
-            Aiq = normals
-            biq = fbarrier
-
-        elif mode == 0: # sticking pivot, robot slide right 
-            
-            # inequality constraints
-            Aiq = normals[2:6, :]
-            biq = fbarrier[2:6]
-
-        elif mode == 1: # sticking pivot, robot slide left 
-            
-            # inequality constraints
-            Aiq = normals[2:6, :]
-            biq = fbarrier[2:6]
-
-        else:
-            raise RuntimeError("Invalid mode: must be -1, 0, or 1")   
-
-
+        # solve qp
         result = self.solve_qp_cvxopt(P, q, Aiq, biq)
+
+        # reset mu at robot contact
+        self.pbal_helper.mu_contact = mu_contact
+        # print(self.pbal_helper.mu_contact)
+
         return np.squeeze(np.array(result['x']))
 
 

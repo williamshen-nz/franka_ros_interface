@@ -219,11 +219,13 @@ if __name__ == '__main__':
     target_frame_broadcaster = tf2_ros.TransformBroadcaster()
 
     # target pose 
-    dt, st, theta_t, delta_t = generalized_positions[0], 0.03, np.pi/10, 30.
+    # initial_generalized_positions = generalized_positions
+    print(generalized_positions)
+    dt, st, theta_t, delta_t = generalized_positions[0], -0.08, np.pi/6, 10.
     tagret_pose_contact_frame = np.array([dt, st, theta_t])
     
-    # only work for sticking
-    mode = 0
+    # only works for sticking
+    mode = 1
 
     # build barrier function model
     obj_params = dict()
@@ -240,12 +242,16 @@ if __name__ == '__main__':
     param_dict['K_theta'] = 10.0
     param_dict['K_s'] = 10.
     param_dict['exponential_time_constant'] = 10.
+    param_dict['concavity_rotating'] = 1.
+    param_dict['concavity_sliding'] = 4.
 
     # create inverse model
     pbc = PbalBarrierController(param_dict)
 
     # initial impedance target
     impedance_target_contact = generalized_positions
+    # impedance_target_contact = np.array([
+    #     -0.11822660267353058, -0.0050518084317445755, -0.2717556357383728])
     impedance_target = pbc.pbal_helper.forward_kin(
         impedance_target_contact)
     
@@ -260,6 +266,8 @@ if __name__ == '__main__':
 
     arm.set_cart_impedance_pose(impedance_target_pose,
                 stiffness=IMPEDANCE_STIFFNESS_LIST)
+
+    rospy.sleep(1.0)
 
     # initialize lists for plotting
     t_list = []
@@ -302,7 +310,7 @@ if __name__ == '__main__':
                 print("couldn't find solution")
                 break
 
-            print(wrench_increment_contact)
+            # print(wrench_increment_contact)
 
             # convert wrench to robot frame
             contact2robot = pbc.pbal_helper.contact2robot(contact_pose)
