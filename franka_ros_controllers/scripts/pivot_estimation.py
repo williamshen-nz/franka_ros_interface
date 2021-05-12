@@ -29,6 +29,12 @@ def initialize_marker():
     marker_message.lifetime.secs=1.0
     return marker_message
 
+def get_hand_orientation_in_base(contact_pose_homog):
+    # current orientation
+    hand_normal_x = contact_pose_homog[0,0]
+    hand_normal_z = contact_pose_homog[2,0]
+    return -np.arctan2(hand_normal_x, -hand_normal_z)
+
 def initialize_frame():
     frame_message = TransformStamped()
     frame_message.header.frame_id = "base"
@@ -111,6 +117,7 @@ if __name__ == '__main__':
     rate = rospy.Rate(100)
 
     endpoint_pose_all = []
+    hand_angle_all = []
 
     torque_boundary_boolean = None
     # set up torque cone boundary subscriber
@@ -138,7 +145,7 @@ if __name__ == '__main__':
     # hyper parameters
     Nbatch = 250             # max number of datapoints for estimation
     update_length = 200       # number of good points before update/publish
-    diff_threshold = 0.001   # threshold for new datapoints
+    diff_threshold = 0.005   # threshold for new datapoints
 
     # make sure subscribers are receiving commands
     print("Waiting for torque boundary check")
@@ -154,32 +161,47 @@ if __name__ == '__main__':
         # face_center list
         endpoint_pose_list = franka_helper.franka_pose2list(endpoint_pose_franka)
 
+        contact_pose_stamped = ros_helper.list2pose_stamped(endpoint_pose_list)
+        contact_pose_homog = ros_helper.matrix_from_pose(contact_pose_stamped)
+
+        hand_angle = get_hand_orientation_in_base(contact_pose_homog)
+
         # append if empty
         if not endpoint_pose_all:
             endpoint_pose_all.append(endpoint_pose_list)
 
+        if not hand_angle_all:
+            hand_angle_all.append(hand_angle)
+
         # current_quaternion
-        endpoint_quat = franka_helper.franka_orientation2list(endpoint_pose_franka['orientation'])
+        # endpoint_quat = franka_helper.franka_orientation2list(endpoint_pose_franka['orientation'])
 
         # last quaternion in list
-        endpoint_quat_old = endpoint_pose_all[-1][3:]
+        #endpoint_quat_old = endpoint_pose_all[-1][3:]
+
+        hand_angle_old = hand_angle_all[-1]
 
         # difference quaternion
-        diff_quat = tfm.quaternion_multiply(endpoint_quat, 
-                tfm.quaternion_inverse(endpoint_quat_old))
+        #diff_quat = tfm.quaternion_multiply(endpoint_quat, 
+        #        tfm.quaternion_inverse(endpoint_quat_old))
 
+        diff_angle = np.abs(hand_angle-hand_angle_old)
+        while diff_angle>= 2*np.pi:
+            diff_angle-= 2*np.pi
         # diff angle
-        diff_angle = 2 * np.arccos(diff_quat[-1])
+        #diff_angle = 2 * np.arccos(diff_quat[-1])
 
         # if measured pose is new, and the measurement is not at wrench cone boundary
         if np.abs(diff_angle) > diff_threshold and torque_boundary_boolean:
             
             # append to list
             endpoint_pose_all.append(endpoint_pose_list)
+            hand_angle_all.append(hand_angle)
 
             # make list a FIFO buffer of length Nbatch
             if len(endpoint_pose_all) > Nbatch:
                 endpoint_pose_all.pop(0)
+                hand_angle_all.pop(0)
 
             # and update
             if len(endpoint_pose_all) > update_length:

@@ -9,7 +9,7 @@ from ros_helper import (unit_pose, list2pose_stamped, pose_stamped2list,
                                convert_reference_frame, quat2list, 
                                lookupTransform, wrenchstamped_2FT, rotate_wrench, 
                                wrench_reference_point_change)
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, Int32
 
 import numpy as np
 
@@ -61,6 +61,8 @@ if __name__ == '__main__':
         '/end_effector_sensor_in_base_frame', WrenchStamped, queue_size = 10)
     torque_cone_boundary_test_pub = rospy.Publisher(
         '/torque_cone_boundary_test', Bool , queue_size = 10)
+    torque_cone_boundary_flag_pub = rospy.Publisher(
+        '/torque_cone_boundary_flag', Int32 , queue_size = 10)
 
 
     # wait for ft data
@@ -129,10 +131,29 @@ if __name__ == '__main__':
         
         torque_boundary_boolean_message.data = torque_boundary_boolean
 
+        torque_boundary_flag = None
+        torque_boundary_flag_message = Int32()
+
+        if torque_boundary_boolean:
+            torque_boundary_flag=-1
+        else:
+            if normal_force>=-NORMAL_FORCE_THRESHOLD:
+                torque_boundary_flag=0
+            else:
+                if torque/np.abs(normal_force)>(.8*.5*LCONTACT):
+                    torque_boundary_flag=1
+                if torque/np.abs(normal_force)<-(.8*.5*LCONTACT):
+                    torque_boundary_flag=2
+
+        torque_boundary_flag_message.data = torque_boundary_flag
+
+
         # publish and sleep
         ft_sensor_in_base_frame_pub.publish(ft_wrench_in_base)
         ft_sensor_in_end_effector_frame_pub.publish(ft_wrench_in_end_effector)
         end_effector_sensor_in_end_effector_frame_pub.publish(end_effector_wrench_in_end_effector)
         end_effector_sensor_in_base_frame_pub.publish(end_effector_wrench_in_base)
         torque_cone_boundary_test_pub.publish(torque_boundary_boolean_message)
+        torque_cone_boundary_flag_pub.publish(torque_boundary_flag_message)
+
         rate.sleep()

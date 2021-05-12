@@ -188,7 +188,7 @@ Visualization Manager:
       Marker Topic: /pivot_marker
       Name: Pivot
       Namespaces:
-        "": true
+        {}
       Queue Size: 100
       Value: true
     - Alpha: 1
@@ -253,10 +253,6 @@ Visualization Manager:
           Value: false
         ft_sensor:
           Value: false
-        hand_estimate:
-          Value: true
-        line-end-effector:
-          Value: true
         panda_EE:
           Value: false
         panda_K:
@@ -283,8 +279,6 @@ Visualization Manager:
           Value: false
         panda_link8:
           Value: false
-        pivot:
-          Value: true
         triangle:
           Value: true
         world:
@@ -298,11 +292,6 @@ Visualization Manager:
         world:
           base:
             camera_color_optical_frame:
-              {}
-            ee_apriltag_in_world:
-              panda_hand_from_camera:
-                {}
-            hand_estimate:
               {}
             panda_link0:
               panda_link1:
@@ -320,8 +309,6 @@ Visualization Manager:
                                   {}
                               panda_hand:
                                 {}
-            pivot:
-              {}
       Update Interval: 0
       Value: true
   Enabled: true

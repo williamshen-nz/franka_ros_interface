@@ -8,6 +8,7 @@ import rospy
 import copy
 import pdb
 import matplotlib.pyplot as plt
+from matplotlib import cm
 
 import ros_helper, franka_helper
 from franka_interface import ArmInterface 
@@ -151,7 +152,7 @@ if __name__ == '__main__':
     MU_GROUND = 1.0
     MU_CONTACT = 0.2
     IMPEDANCE_STIFFNESS_LIST = [1000, 1000, 1000, 100, 30, 100]
-    NMAX = 20
+    NMAX = 40.
 
     # arm interface
     arm = ArmInterface()
@@ -221,11 +222,11 @@ if __name__ == '__main__':
     # target pose 
     # initial_generalized_positions = generalized_positions
     print(generalized_positions)
-    dt, st, theta_t, delta_t = generalized_positions[0], -0.04, 0.0, 10.
+    dt, st, theta_t, delta_t = generalized_positions[0], 0.02, np.pi/6, 30.
     tagret_pose_contact_frame = np.array([dt, st, theta_t])
     
     # only works for sticking
-    mode = 1
+    mode = 0.
 
     # build barrier function model
     obj_params = dict()
@@ -239,19 +240,19 @@ if __name__ == '__main__':
     # impedance parameters
     param_dict = dict()
     param_dict['obj_params'] = obj_params
-    param_dict['K_theta'] = 10.0
-    param_dict['K_s'] = 15.
-    param_dict['exponential_time_constant'] = 10.
+    param_dict['K_theta'] = 0.5
+    param_dict['K_s'] = 6.0
+    param_dict['trust_region'] = np.array([1., 1., 5., 5., 1., 1., 1.])
     param_dict['concavity_rotating'] = 1.
-    param_dict['concavity_sliding'] = 4.
+    param_dict['concavity_sliding'] = 1.
+    param_dict['regularization_constant'] = 0.001
+    param_dict['torque_margin'] = 0.001 * NMAX
 
     # create inverse model
     pbc = PbalBarrierController(param_dict)
 
     # initial impedance target
     impedance_target_contact = generalized_positions
-    # impedance_target_contact = np.array([
-    #     -0.11822660267353058, -0.0050518084317445755, -0.2717556357383728])
     impedance_target = pbc.pbal_helper.forward_kin(
         impedance_target_contact)
     
@@ -320,7 +321,7 @@ if __name__ == '__main__':
             # compute impedance increment
             impedance_increment_robot = wrench_increment_robot / np.array(
                 IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
-            impedance_target += impedance_increment_robot / RATE            
+            impedance_target += 5. * impedance_increment_robot / RATE            
 
             # make pose to send to franka
             waypoint_pose_list = robot2_pose_list(impedance_target[0],
@@ -356,6 +357,8 @@ if __name__ == '__main__':
             # store impedances
             impedance_target_list.append(impedance_target)
 
+            print(contact_pose)
+
             rate.sleep()
 
     print('control loop completed')
@@ -380,13 +383,40 @@ if __name__ == '__main__':
     measured_wrench_contact_array = np.array(measured_wrench_contact_list)
     impedance_target_array = np.array(impedance_target_list)
 
-    # labels = ['d', 's', 'theta']
-    # fig, ax = plt.subplots(3,1)
-    # for i in range(3):
-    #     ax[i].plot(t_array, nominal_pose2D_array[:, i], 'm', label='nom')
-    #     ax[i].plot(t_array, end_effector_pose2D_array[:, i], 'b', label='measured')
-    #     ax[i].set_ylabel(labels[i])
-    #     # ax[i].legend()
+
+
+    labels = ['d', 's', 'theta']
+    fig, ax = plt.subplots(3,1)
+    for i in range(3):
+        ax[i].plot(t_array, target_pose_array[:, i], 'k', label='target')
+        ax[i].plot(t_array, contact_pose_array[:, i], 'b', label='measured')
+        ax[i].set_ylabel(labels[i])
+        # ax[i].legend()
+
+
+    print("plotting")
+    start = 0.0
+    stop = 1.0
+    number_of_lines = len(t_list)
+    cm_subsection = np.linspace(start, stop, number_of_lines) 
+    colors = [cm.jet(x) for x in cm_subsection]
+
+    fig2, axs2 = plt.subplots(1, 3)
+    axs2 = pbc.plot_boundaries(axs2, contact_pose_list[0], 
+        measured_wrench_contact_list[0], NMAX)
+
+    for contact_pose, delta_contact_pose, measured_wrench, delta_wrench, color in zip(
+        contact_pose_list, delta_contact_pose_list, 
+        measured_wrench_contact_list, wrench_increment_contact_list, colors):
+
+        axs2 = pbc.plot_projections(axs2, contact_pose, 5 * delta_wrench / RATE, 
+            measured_wrench, NMAX, color, False)
+
+        # axs2 = pbc.plot_cost_function_projection(axs2, contact_pose, 
+        #     delta_contact_pose, measured_wrench, mode, color)
+
+    plt.show()
+
 
     # titles = ['s', 'theta']
     # fig2, ax2 = plt.subplots(2,1)

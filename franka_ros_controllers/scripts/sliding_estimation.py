@@ -10,7 +10,7 @@ import ros_helper
 import franka_helper
 from franka_interface import ArmInterface 
 from geometry_msgs.msg import TransformStamped
-from std_msgs.msg import Float32MultiArray
+from std_msgs.msg import Float32MultiArray, Bool, Int32
 from visualization_msgs.msg import Marker
 import matplotlib.pyplot as plt
 
@@ -21,10 +21,14 @@ def get_hand_orientation_in_base(contact_pose_homog):
     hand_normal_z = contact_pose_homog[2,0]
     return -np.arctan2(hand_normal_x, -hand_normal_z)
 
-def update_sliding_velocity(x0, z0, contact_pose, contact_vel):
+def update_sliding_velocity(x0, z0, contact_pose, contact_vel, 
+    torque_boundary_flag, ee_pos_contact_frame_old):
 
     contact_pose_stamped = ros_helper.list2pose_stamped(contact_pose)
     contact_pose_homog = ros_helper.matrix_from_pose(contact_pose_stamped)
+
+    d_old, s_old, theta_old = ee_pos_contact_frame_old[0
+        ], ee_pos_contact_frame_old[1], ee_pos_contact_frame_old[2]
     
     # 2-D unit contact normal in world frame
     e_n = contact_pose_homog[:3, 0]
@@ -36,26 +40,48 @@ def update_sliding_velocity(x0, z0, contact_pose, contact_vel):
     t2D = e_t[[0,2]]
     e_t2D = t2D/np.sqrt(np.sum(t2D ** 2))
 
-    # 2-D angular velocity
-    theta_dot = contact_vel[4]
-
     # xc and zc
     xc, zc = contact_pose[0] - x0, contact_pose[2] - z0
 
-    # compute velocity jacobian between world frame (x, z, tht) and contact frame (n, t, tht)
-    velocity_jacobian = np.vstack([np.vstack([e_n2D, e_t2D, np.array([zc, -xc])]).T,
-         	np.array([0., 0., 1.])])
+    if torque_boundary_flag == -1:
 
-    # compute end effector velocity in contact frame
-    ee_vel_contact_frame = np.linalg.solve(velocity_jacobian, 
-    	np.array([contact_vel[0], contact_vel[2], theta_dot]))
+        # 2-D angular velocity
+        theta_dot = contact_vel[4]
 
-    # find normal and tangential displacment
-    s = e_t2D[0]*xc + e_t2D[1]*zc 
-    d = e_n2D[0]*xc + e_n2D[1]*zc 
+        # compute velocity jacobian between world frame (x, z, tht) and contact frame (n, t, tht)
+        velocity_jacobian = np.vstack([np.vstack([e_n2D, e_t2D, np.array([zc, -xc])]).T,
+             	np.array([0., 0., 1.])])
 
-    # find angle
-    tht = get_hand_orientation_in_base(contact_pose_homog)
+        # compute end effector velocity in contact frame
+        ee_vel_contact_frame = np.linalg.solve(velocity_jacobian, 
+        	np.array([contact_vel[0], contact_vel[2], theta_dot]))
+
+        # find normal and tangential displacment
+        s = e_t2D[0]*xc + e_t2D[1]*zc 
+        d = e_n2D[0]*xc + e_n2D[1]*zc 
+
+        # find angle
+        tht = get_hand_orientation_in_base(contact_pose_homog)
+
+    elif torque_boundary_flag == 0:
+        pass
+    elif torque_boundary_flag == 1 or torque_boundary_flag == 2:
+
+        theta_dot = 0.
+
+        if torque_boundary_flag == 1:
+
+            xcontact = xc + 0.5 * LCONTACT * e_t2D[0]
+            zcontact = zc + 0.5 * LCONTACT * e_t2D[1]
+
+        if torque_boundary_flag == 2:
+            
+            xcontact = xc - 0.5 * LCONTACT * e_t2D[0]
+            zcontact = zc - 0.5 * LCONTACT * e_t2D[1]
+
+
+    else:
+
 
     return ee_vel_contact_frame, np.array([d, s, tht])
         
@@ -64,6 +90,15 @@ def pivot_xyz_callback(data):
     pivot_xyz =  [data.transform.translation.x,
         data.transform.translation.y,
         data.transform.translation.z]
+
+def torque_cone_boundary_test_callback(data):
+    global torque_boundary_boolean
+    torque_boundary_boolean = data.data
+
+def torque_cone_boundary_flag_callback(data):
+    global torque_cone_boundary_flag
+    torque_cone_boundary_flag = data.data
+
 
 if __name__ == '__main__':
 
@@ -75,9 +110,16 @@ if __name__ == '__main__':
 
     # initialize globals
     pivot_xyz = None
+    torque_boundary_boolean = None
+    torque_cone_boundary_flag = None
+    ee_pos_contact_frame_old = None
 
     # setting up subscribers
     pivot_xyz_sub = rospy.Subscriber("/pivot_frame", TransformStamped, pivot_xyz_callback)
+    torque_cone_boundary_test_sub = rospy.Subscriber("/torque_cone_boundary_test", 
+        Bool,  torque_cone_boundary_test_callback)
+    torque_cone_boundary_flag_sub = rospy.Subscriber("/torque_cone_boundary_flag", 
+        Int32,  torque_cone_boundary_flag_callback)
 
     # setting up publishers
     generalized_positions_pub = rospy.Publisher('/generalized_positions', 
@@ -92,6 +134,15 @@ if __name__ == '__main__':
     print("Waiting for pivot estimate to stabilize")
     while pivot_xyz is None:
         rospy.sleep(0.1)
+
+    print("Waiting for torque boundary check")
+    while torque_boundary_boolean is None:
+        pass
+
+    print("Waiting for torque boundary check")
+    while torque_cone_boundary_flag is None:
+        pass
+
 
     print("Starting to publish sliding velocity/position")
     while not rospy.is_shutdown():
@@ -110,12 +161,16 @@ if __name__ == '__main__':
             endpoint_velocity) 
 
         # update sliding velocity
-        ee_vel_contact_frame, ee_pos_contact_frame = update_sliding_velocity(pivot_xyz[0],
-            pivot_xyz[2], endpoint_pose_list, endpoint_velocity_list)
+        # if torque_boundary_boolean:
+        ee_vel_contact_frame, ee_pos_contact_frame = update_sliding_velocity(
+            pivot_xyz[0], pivot_xyz[2], endpoint_pose_list,
+            endpoint_velocity_list, torque_cone_boundary_flag, 
+            ee_pos_contact_frame_old)
 
         # update messages
         position_msg.data = ee_pos_contact_frame
         velocity_msg.data = ee_vel_contact_frame
+        ee_pos_contact_frame_old = ee_pos_contact_frame
 
         # publish
         generalized_positions_pub.publish(position_msg)
