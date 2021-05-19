@@ -36,7 +36,7 @@ class PbalImpedanceInverseModel(object):
         return np.dot(Aeq_contact, robot2contact), beq_contact
 
     def static_equilbrium_robot_aux(self):
-       
+
         Aeq_robot, beq_robot = self.static_equilbrium_robot()
 
         return np.hstack([Aeq_robot, np.array([[0]])]), beq_robot
@@ -64,13 +64,13 @@ class PbalImpedanceInverseModel(object):
         robot2contact = self.pbal_helper.contact2robot(
             self.contact_pose_target)
         return np.dot(Aiq_contact, robot2contact), biq_contact
-    
+
     def wrench_cone_constraints_line_robot_aux(self):
-        
+
         Aiq_contact, biq_contact = self.wrench_cone_constraints_line_contact()
         robot2contact = self.pbal_helper.contact2robot(
             self.contact_pose_target)
-        
+
         temp1 = np.dot(Aiq_contact, robot2contact)
         temp2 = np.dot(Aiq_contact, np.array([-1, 0, 0]))
 
@@ -102,13 +102,13 @@ class PbalImpedanceInverseModel(object):
         robot2contact = self.pbal_helper.contact2robot(
             self.contact_pose_target)
         return np.dot(Aiq_contact, robot2contact), biq_contact
-    
+
     def normal_force_constraint_robot_aux(self, Nmax):
 
         Aiq_robot, biq_robot = self.normal_force_constraint_robot(Nmax)
         return np.hstack([Aiq_robot, np.array([[0]])]), biq_robot
 
-    def solve_linear_program(self, Nmax, cost = np.array([0., 0., 0.])):
+    def solve_linear_program(self, Nmax, cost=np.array([0., 0., 0.])):
 
         Aeq_r, beq_r = self.static_equilbrium_robot()
 
@@ -119,8 +119,7 @@ class PbalImpedanceInverseModel(object):
         Aiq = np.vstack([Aline_r, Apivot_r, Anormal_r])
         biq = np.concatenate([bline_r, bpivot_r, bnormal_r])
 
-        result2 = self.solve_lp_cvxopt(cost, Aeq_r, beq_r,
-                                       Aiq, biq)
+        result2 = self.solve_lp_cvxopt(cost, Aeq_r, beq_r, Aiq, biq)
 
         robot_wrench = np.squeeze(np.array(result2['x']))
 
@@ -129,15 +128,8 @@ class PbalImpedanceInverseModel(object):
     def solve_linear_program_control_nullspace(self, Nmax):
 
         null_space_corners = []
-        index_list = [
-            [0, 1, 3],
-            [0, 1, 4],
-            [0, 2, 3],
-            [0, 2, 4],
-            [0, 1, 5],
-            [0, 2, 5],
-            [0, 3, 5],
-            [0, 4, 5]]
+        index_list = [[0, 1, 3], [0, 1, 4], [0, 2, 3], [0, 2, 4], [0, 1, 5],
+                      [0, 2, 5], [0, 3, 5], [0, 4, 5]]
 
         for index in index_list:
 
@@ -153,13 +145,13 @@ class PbalImpedanceInverseModel(object):
 
             candidate_wrench = np.linalg.solve(Aall[index, :], ball[index])
 
-            print 
+            print
             if np.all(np.dot(Aiq, candidate_wrench) - biq <= 0):
                 null_space_corners.append(candidate_wrench)
                 print(candidate_wrench)
 
         return null_space_corners
-    
+
     def solve_linear_program_aux(self, Nmax):
 
         Aeq_aux, beq_aux = self.static_equilbrium_robot_aux()
@@ -169,17 +161,16 @@ class PbalImpedanceInverseModel(object):
         Anormal_aux, bnormal_aux = self.normal_force_constraint_robot_aux(Nmax)
 
         # positive aux constraints
-        Aiq_aux = np.expand_dims(np.array([0., 0., 0., - 1]), axis=0)
+        Aiq_aux = np.expand_dims(np.array([0., 0., 0., -1]), axis=0)
         biq_aux = np.array([0.])
 
         Aiq = np.vstack([Aline_aux, Apivot_aux, Anormal_aux, Aiq_aux])
         biq = np.concatenate([bline_aux, bpivot_aux, bnormal_aux, biq_aux])
 
-        beta = -1. 
+        beta = -1.
         cost = np.array([0., 0., 0., beta])
 
-        result2 = self.solve_lp_cvxopt(cost, Aeq_aux, beq_aux,
-                                       Aiq, biq)
+        result2 = self.solve_lp_cvxopt(cost, Aeq_aux, beq_aux, Aiq, biq)
 
         robot_wrench = np.squeeze(np.array(result2['x']))
 
@@ -189,7 +180,7 @@ class PbalImpedanceInverseModel(object):
 
         # add Etheta to static eq constraint to shift target
         Aeq_aux, beq_aux = self.static_equilbrium_robot_aux()
-        beq_aux+=Etheta
+        beq_aux += Etheta
 
         # robot2contact = self.pbal_helper.contact2robot(
         #     self.contact_pose_target)
@@ -203,38 +194,77 @@ class PbalImpedanceInverseModel(object):
         # # combine eq constraints
         # Aeq_aux = np.vstack([Aeq_aux, Afric_aux])
         # beq_aux = np.concatenate([beq_aux, bfric_aux])
-        
+
         # keep only torque constraints
         Aline_aux, bline_aux = self.wrench_cone_constraints_line_robot_aux()
-        bline_aux[0]+= Es
-        bline_aux[1]-= Es
+        bline_aux[0] += Es
+        bline_aux[1] -= Es
         # Aline_aux, bline_aux = Aline_aux[2:, :], bline_aux[2:]
 
         Apivot_aux, bpivot_aux = self.wrench_cone_constraint_pivot_robot_aux()
         Anormal_aux, bnormal_aux = self.normal_force_constraint_robot_aux(Nmax)
 
         # positive aux constraints
-        Aiq_aux = np.expand_dims(np.array([0., 0., 0., - 1]), axis=0)
+        Aiq_aux = np.expand_dims(np.array([0., 0., 0., -1]), axis=0)
         biq_aux = np.array([0.])
 
         Aiq = np.vstack([Aline_aux, Apivot_aux, Anormal_aux, Aiq_aux])
         biq = np.concatenate([bline_aux, bpivot_aux, bnormal_aux, biq_aux])
 
-        beta = -1. 
+        beta = -1.
         cost = np.array([0., 0., 0., beta])
 
-        result2 = self.solve_lp_cvxopt(cost, Aeq_aux, beq_aux,
-                                       Aiq, biq)
+        result2 = self.solve_lp_cvxopt(cost, Aeq_aux, beq_aux, Aiq, biq)
 
         robot_wrench = np.squeeze(np.array(result2['x']))
 
-        try:       
+        try:
             slack = np.dot(Aiq, robot_wrench) - biq
         except TypeError:
             slack = None
 
         return robot_wrench, slack
 
+    def solve_linear_program_mode(self, Nmax, mode=-1):
+        '''
+        mode 0: sticking pivot, robot slide right 
+        mode 1: sticking pivot, robot slide left
+        mode 2: pivot sliding left, robot sticking
+        mode 3: pivot sliding right, robot_sticking
+        mode not in [0, 3]: sticking, sticking
+        '''
+        Aeq_r, beq_r = self.static_equilbrium_robot()
+
+        Aline_r, bline_r = self.wrench_cone_constraints_line_robot()
+        Apivot_r, bpivot_r = self.wrench_cone_constraint_pivot_robot()
+        Anormal_r, bnormal_r = self.normal_force_constraint_robot(Nmax)
+
+        if mode == -1:
+            pass
+        elif mode == 0:
+            Aline_r[0, :] *= -1
+            bline_r[0] *= -1
+        elif mode == 1:
+            Aline_r[1, :] *= -1
+            bline_r[1] *= -1
+        else:
+            raise RuntimeError("mode not implemented yet")
+
+        Aiq = np.vstack([Aline_r, Apivot_r, Anormal_r])
+        biq = np.concatenate([bline_r, bpivot_r, bnormal_r])
+
+        cost = np.zeros(3)
+
+        result = self.solve_lp_cvxopt(cost, Aeq_r, beq_r, Aiq, biq)
+
+        if result['status'] == 'optimal':
+            print("solution found")
+            robot_wrench = np.squeeze(np.array(result['x']))
+        else:
+            print("no solution found")
+            robot_wrench = None
+
+        return robot_wrench
 
     def solve_linear_program_mode_aux(self, Nmax, mode=-1):
         '''
@@ -243,7 +273,6 @@ class PbalImpedanceInverseModel(object):
         mode 2: pivot sliding left, robot sticking
         mode 3: pivot sliding right, robot_sticking
         mode not in [0, 3]: sticking, sticking
-
         '''
 
         # with auxilliary variable
@@ -251,8 +280,8 @@ class PbalImpedanceInverseModel(object):
         Aline_aux, bline_aux = self.wrench_cone_constraints_line_robot_aux()
         Apivot_aux, bpivot_aux = self.wrench_cone_constraint_pivot_robot_aux()
         Anormal_aux, bnormal_aux = self.normal_force_constraint_robot_aux(Nmax)
-        Aiq_aux, biq_aux = np.expand_dims(np.array([0., 0., 0., - 1]), 
-            axis=0), np.array([0.])
+        Aiq_aux, biq_aux = np.expand_dims(np.array([0., 0., 0., -1]),
+                                          axis=0), np.array([0.])
 
         # without auxilliary variable
         Aline, bline = self.wrench_cone_constraints_line_robot()
@@ -271,12 +300,13 @@ class PbalImpedanceInverseModel(object):
         Atemp = np.vstack([Aline[:2, :], Apivot])
         btemp = np.concatenate([bline[:2], bpivot])
 
-
         # build matrices
         mode_mask = np.array(range(4)) == mode
 
-        Aiq = np.vstack([Atemp_aux[~mode_mask, :], Atemp_torque, Anormal_aux, Aiq_aux])
-        biq = np.concatenate([btemp_aux[~mode_mask], btemp_torque, bnormal_aux, biq_aux])
+        Aiq = np.vstack(
+            [Atemp_aux[~mode_mask, :], Atemp_torque, Anormal_aux, Aiq_aux])
+        biq = np.concatenate(
+            [btemp_aux[~mode_mask], btemp_torque, bnormal_aux, biq_aux])
 
         Aeq = np.vstack([Aeq_aux, Atemp[mode_mask, :]])
         beq = np.concatenate([beq_aux, btemp[mode_mask]])
@@ -306,22 +336,19 @@ class PbalImpedanceInverseModel(object):
 
         #     TOL = 0.001
         #     iq_const_slack = np.dot(Aiq, robot_wrench) - biq
-        #     const_name_list = ['Other friction', 'Pivot 1', 'Pivot 2', 
+        #     const_name_list = ['Other friction', 'Pivot 1', 'Pivot 2',
         #         'Torque CCW', 'Torque CW', 'Normal force cap', 'Aux variable']
-        #     # for i, iq_slacki in enumerate(iq_const_slack):                
+        #     # for i, iq_slacki in enumerate(iq_const_slack):
         #     #         # if iq_slacki < TOL and ((i <= 4 and robot_wrench[-1] < TOL
         #     #         #     ) or (i >= 5)):
         #     #         if iq_slacki > -TOL:
         #     #             # pass
         #     #             # print(iq_slacki)
-        #     #             print(const_name_list[i])                        
-                            
+        #     #             print(const_name_list[i])
 
         # print("Iq Const: ", np.dot(Aiq, robot_wrench) - biq)
 
         return robot_wrench
-
-
 
     # def solve_linear_program_fixed_mu_and_lcontact(self, mu, l_contact):
 
@@ -349,8 +376,6 @@ class PbalImpedanceInverseModel(object):
     #     self.pbal_helper.mu_contact, self.pbal_helper.l_contact = mu0, lcontact0
 
     #     return robot_wrench
-
-
 
     def solve_lp_cvxopt(self, c, Aeq, beq, Aiq, biq):
 
@@ -431,9 +456,9 @@ class PbalImpedanceInverseModel(object):
                         TORQUE_SCALE * np.abs(robot_wrench[2]),
                         color=tcolor)
         cmax = plt.Circle((robot_pose[0], robot_pose[1]),
-                        TORQUE_SCALE * Nmax * self.pbal_helper.l_contact/2,
-                        edgecolor='k',
-                        facecolor='w')
+                          TORQUE_SCALE * Nmax * self.pbal_helper.l_contact / 2,
+                          edgecolor='k',
+                          facecolor='w')
         ax.add_artist(cmax)
         ax.add_artist(cc)
 
@@ -486,7 +511,7 @@ if __name__ == "__main__":
     obj_params = dict()
     obj_params['pivot'] = np.array([0., 0.])
     obj_params['mgl'] = .6
-    obj_params['theta0'] = np.pi/12
+    obj_params['theta0'] = np.pi / 12
     obj_params['mu_contact'] = 0.3
     obj_params['mu_ground'] = 0.3
     obj_params['l_contact'] = 0.065
@@ -494,12 +519,13 @@ if __name__ == "__main__":
     # impedance parameters
     param_dict = dict()
     param_dict['obj_params'] = obj_params
-    param_dict['contact_pose_target'] = np.array([-0.1, 0.00, -np.pi/6])
+    param_dict['contact_pose_target'] = np.array([-0.1, 0.00, -np.pi / 6])
 
     # find force
     Nmax = 20
     pbal_impedance_inv = PbalImpedanceInverseModel(param_dict)
-    robot_wrench = pbal_impedance_inv.solve_linear_program_mode_aux(Nmax,mode=2)
+    robot_wrench = pbal_impedance_inv.solve_linear_program_mode_aux(Nmax,
+                                                                    mode=2)
     print(robot_wrench)
 
     # plot
@@ -508,4 +534,3 @@ if __name__ == "__main__":
     pbal_impedance_inv.plot_state(robot_wrench, ax, Nmax)
     ax.axis('equal')
     plt.show()
-    
