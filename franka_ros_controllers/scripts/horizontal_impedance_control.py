@@ -66,18 +66,18 @@ if __name__ == '__main__':
 
 
     # set up rosbag
-    rostopic_list = ["/camera/color/image_raw/compressed",
-                     "/face_contact_center_pose_in_world_frame_publisher",
-                     "/obj_apriltag_pose_in_world_from_camera_publisher",
-                     "/generalized_positions",
-                     "/end_effector_sensor_in_base_frame",
-                     "/com_ray",
-                     "/pivot_marker",
-                     "/gravity_torque",
-                     "/external_wrench_in_pivot",
-                     "/robot_friction_estimate"]
+    # rostopic_list = ["/camera/color/image_raw/compressed",
+    #                  "/face_contact_center_pose_in_world_frame_publisher",
+    #                  "/obj_apriltag_pose_in_world_from_camera_publisher",
+    #                  "/generalized_positions",
+    #                  "/end_effector_sensor_in_base_frame",
+    #                  "/com_ray",
+    #                  "/pivot_marker",
+    #                  "/gravity_torque",
+    #                  "/external_wrench_in_pivot",
+    #                  "/robot_friction_estimate"]
 
-    ros_helper.initialize_rosbag(rostopic_list, exp_name="horizontal_impedance_control")
+    # ros_helper.initialize_rosbag(rostopic_list, exp_name="horizontal_impedance_control")
 
     # start loop
     start_time = rospy.Time.now().to_sec()
@@ -108,5 +108,5 @@ if __name__ == '__main__':
     print('control loop completed')
 
     # terminate rosbags
-    ros_helper.terminate_rosbag()
+    # ros_helper.terminate_rosbag()
 

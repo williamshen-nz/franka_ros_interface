@@ -21,7 +21,7 @@ def franka_orientation2list(orientation):
 
 
 def list2franka_pose(arm_pose_list):
-  arm_pose_franka = {'position': arm_pose_list[:3], 
+  arm_pose_franka = {'position': np.array(arm_pose_list[:3]), 
     'orientation': np.quaternion(arm_pose_list[6],
     arm_pose_list[3],arm_pose_list[4],arm_pose_list[5])}
 

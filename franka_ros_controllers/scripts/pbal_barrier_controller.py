@@ -22,6 +22,7 @@ class PbalBarrierController(object):
         self.concavity_sliding = param_dict['concavity_sliding']
         self.concavity_rotating = param_dict['concavity_rotating']
         self.regularization_constant = param_dict['regularization_constant']
+        self.s_scale = param_dict['s_scale']
 
         # barrier function parameters
         self.trust_region = param_dict['trust_region']
@@ -45,8 +46,8 @@ class PbalBarrierController(object):
         # measured wrench is in contact frame
         biq = np.array([0., 0., -self.torque_margin, -self.torque_margin,
             Nmax, 0., 0.])
-        Aiq = np.array([[-mu_c, 1., 0.], # friction robot 1
-            [-mu_c, -1., 0.], # friction robot 2
+        Aiq = np.array([[-mu_c, 1., 0.]/np.sqrt(1 + mu_c ** 2), # friction robot 1
+            [-mu_c, -1., 0.]/np.sqrt(1 + mu_c ** 2), # friction robot 2
             [-lc / 2., 0., 1.], # torque 1
             [-lc / 2., 0., -1.], # torque 2
             [1., 0., 0.]]) # normal force
@@ -68,6 +69,8 @@ class PbalBarrierController(object):
         d, s, theta = contact_pose[0], contact_pose[1], contact_pose[2]
         delta_s, delta_theta = delta_contact_pose[1], delta_contact_pose[2]
 
+        delta_s = 2 * np.arctan(delta_s/self.s_scale)/np.pi
+
         # theta error cost
         a1 = self.concavity_rotating * np.array([-s, d, 1.])
         # a1 = np.array([-s, d, 1.])
@@ -75,14 +78,31 @@ class PbalBarrierController(object):
         P = np.outer(a1, a1)
         q = -2 * a1 * b1
         const = b1 ** 2
-            
+        
+        if mode == 0 and delta_s < 0:
+            mode = -1
+        if mode == 1 and delta_s > 0:
+            mode = -1
+
         if mode == -1:   # sticking, sticking
-            pass
+
+            a2 = self.concavity_sliding * np.array(
+               [1, 0., 0.])
+            # a2 = self.concavity_sliding * np.array(
+            #     [0., 1., 0.])
+            # a2 = np.array([self.pbal_helper.mu_contact, 1., 0.])
+            b2 = 1.
+            P  += np.outer(a2, a2)
+            q  -= 2 * a2 * b2
+            const += b2 ** 2
+            
         elif mode == 0:    # sticking pivot, robot slide right
 
             # s error cost slide right
             a2 = self.concavity_sliding * np.array(
-                [-self.pbal_helper.mu_contact, 1., 0.])
+               [-self.pbal_helper.mu_contact, 1., 0.])
+            # a2 = self.concavity_sliding * np.array(
+            #     [0., 1., 0.])
             # a2 = np.array([self.pbal_helper.mu_contact, 1., 0.])
             b2 = self.K_s * delta_s
             P  += np.outer(a2, a2)
@@ -93,9 +113,11 @@ class PbalBarrierController(object):
 
             # s error slide left
             a2 = self.concavity_sliding * np.array(
-                [-self.pbal_helper.mu_contact, -1., 0.])
+               [-self.pbal_helper.mu_contact, -1., 0.])
+            # a2 = self.concavity_sliding * np.array(
+            #     [0.0, -1., 0.])
             # a2 = np.array([self.pbal_helper.mu_contact, -1., 0.])
-            b2 = self.K_s * delta_s
+            b2 = -self.K_s * delta_s
             P += np.outer(a2, a2)
             q -= 2 * a2 * b2
             const += b2 ** 2
@@ -274,6 +296,9 @@ class PbalBarrierController(object):
         d, s, theta = contact_pose[0], contact_pose[1], contact_pose[2]
         delta_s, delta_theta = delta_contact_pose[1], delta_contact_pose[2]
 
+        delta_s = 2 * np.arctan(delta_s/self.s_scale)/np.pi
+
+
         a1 = self.concavity_rotating * np.array([-s, d, 1.])
         a1 = a1 / np.linalg.norm(a1) ** 2
         b1 = self.K_theta * delta_theta
@@ -284,15 +309,15 @@ class PbalBarrierController(object):
             pass
         elif mode == 0:
             a2 = self.concavity_sliding * np.array(
-                [self.pbal_helper.mu_contact, 1., 0.])
+                [-self.pbal_helper.mu_contact, 1., 0.])
             a2 = a2 / np.linalg.norm(a2) ** 2
             b2 = self.K_s * delta_s
             displacement2 = a2 * b2
         elif mode == 1:
             a2 = self.concavity_sliding * np.array(
-                [self.pbal_helper.mu_contact, -1., 0.])
+                [-self.pbal_helper.mu_contact, -1., 0.])
             a2 = a2 / np.linalg.norm(a2) ** 2
-            b2 = self.K_s * delta_s
+            b2 = -self.K_s * delta_s
             displacement2 = a2 * b2
         else:
             raise RuntimeError("Invalid mode: must be -1, 0, or 1")

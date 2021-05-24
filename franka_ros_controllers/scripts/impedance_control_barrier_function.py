@@ -148,11 +148,11 @@ if __name__ == '__main__':
     rate = rospy.Rate(RATE)
 
     # constants
-    LCONTACT = 0.8 * 0.065
-    MU_GROUND = 1.0
+    LCONTACT = 0.065
+    MU_GROUND = 1.5
     MU_CONTACT = 0.2
     IMPEDANCE_STIFFNESS_LIST = [1000, 1000, 1000, 100, 30, 100]
-    NMAX = 40.
+    NMAX = 20.
 
     # arm interface
     arm = ArmInterface()
@@ -221,12 +221,12 @@ if __name__ == '__main__':
 
     # target pose 
     # initial_generalized_positions = generalized_positions
-    print(generalized_positions)
-    dt, st, theta_t, delta_t = generalized_positions[0], 0.02, np.pi/6, 30.
+    load_initial_config = True
+    dt, st, theta_t, delta_t = generalized_positions[0], -0.02, -np.pi/6, 20.
     tagret_pose_contact_frame = np.array([dt, st, theta_t])
     
     # only works for sticking
-    mode = 0.
+    mode = 1
 
     # build barrier function model
     obj_params = dict()
@@ -237,24 +237,38 @@ if __name__ == '__main__':
     obj_params['mu_ground'] = MU_GROUND
     obj_params['l_contact'] = LCONTACT
 
+    theta_mult=10.
     # impedance parameters
     param_dict = dict()
     param_dict['obj_params'] = obj_params
-    param_dict['K_theta'] = 0.5
-    param_dict['K_s'] = 6.0
-    param_dict['trust_region'] = np.array([1., 1., 5., 5., 1., 1., 1.])
-    param_dict['concavity_rotating'] = 1.
-    param_dict['concavity_sliding'] = 1.
-    param_dict['regularization_constant'] = 0.001
-    param_dict['torque_margin'] = 0.001 * NMAX
+    param_dict['K_theta'] = 25.0*theta_mult
+    param_dict['K_s'] = 10.
+    param_dict['trust_region'] = np.array([1., 1., 3., 3., 1., 1., 1.])
+    param_dict['concavity_rotating'] = 6.*theta_mult
+    param_dict['concavity_sliding'] = .3
+    param_dict['regularization_constant'] = 0.0001
+    param_dict['torque_margin'] = 0.006 * NMAX
+    param_dict['s_scale'] = 1/2000.
 
     # create inverse model
     pbc = PbalBarrierController(param_dict)
 
     # initial impedance target
-    impedance_target_contact = generalized_positions
-    impedance_target = pbc.pbal_helper.forward_kin(
-        impedance_target_contact)
+    if load_initial_config:
+        impedance_target = []
+
+        # open file and read the content in a list
+        with open('final_impedance_pose.txt', 'r') as filehandle:
+            for line in filehandle:            
+                currentPlace = float(line[:-1]) 
+                impedance_target.append(currentPlace)
+
+        impedance_target = np.array(impedance_target)
+    else:
+
+        impedance_target_contact = generalized_positions
+        impedance_target = pbc.pbal_helper.forward_kin(
+            impedance_target_contact)
     
     # make pose to send to franka
     impedance_target_6D_list = robot2_pose_list(impedance_target[0],
@@ -264,6 +278,7 @@ if __name__ == '__main__':
 
     impedance_target_pose = franka_helper.list2franka_pose(
         impedance_target_6D_list)
+
 
     arm.set_cart_impedance_pose(impedance_target_pose,
                 stiffness=IMPEDANCE_STIFFNESS_LIST)
@@ -364,7 +379,10 @@ if __name__ == '__main__':
     print('control loop completed')
 
     # terminate rosbags
-    ros_helper.terminate_rosbag()
+    with open('final_impedance_pose.txt', 'w') as filehandle:
+        for listitem in impedance_target:
+                filehandle.write('%s\n' % listitem)
+    # ros_helper.terminate_rosbag()
 
     # unsubscribe from topics
     pivot_xyz_sub.unregister()
@@ -415,25 +433,14 @@ if __name__ == '__main__':
         # axs2 = pbc.plot_cost_function_projection(axs2, contact_pose, 
         #     delta_contact_pose, measured_wrench, mode, color)
 
+
+    fig3, axs3 = plt.subplots(1, 3)
+    axs3 = pbc.plot_boundaries(axs3, contact_pose_list[0], 
+        measured_wrench_contact_list[0], NMAX)
+
+    axs3[0].plot(measured_wrench_contact_array[:, 1], measured_wrench_contact_array[:, 0])
+    axs3[1].plot(measured_wrench_contact_array[:, 2], measured_wrench_contact_array[:, 0])
+    # ax3[0].plot(measured_wrench_contact_array[:, 2], measured_wrench_contact_array[:, 0])
+
+
     plt.show()
-
-
-    # titles = ['s', 'theta']
-    # fig2, ax2 = plt.subplots(2,1)
-    # for i in range(2):
-    #     ax2[i].plot(t_array, error_pose_array[:, i], 'k')
-    #     ax2[i].set_title(titles[i])
-
-    # titles = ['fn', 'ft', 'tau']
-    # fig3, ax3 = plt.subplots(3,1)
-    # for i in range(3):
-    #     ax3[i].plot(t_array, nominal_applied_wrench_contact_array[:, i], 'k')
-    #     ax3[i].plot(t_array, measured_wrench_contact_array[:, i], 'b')
-    #     ax3[i].set_title(titles[i])
-
-    # fig4, ax4 = plt.subplots(1,1)
-    # for i in range(slack_array.shape[1]): 
-    #     ax4.plot(t_array, slack_array[:, i], label=str(i))
-    # ax4.legend()
-    # plt.show()
-
