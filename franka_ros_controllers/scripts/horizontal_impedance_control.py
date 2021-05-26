@@ -8,10 +8,10 @@ import copy
 import pdb
 import matplotlib.pyplot as plt
 
-
 import ros_helper
 from franka_interface import ArmInterface 
 from geometry_msgs.msg import PoseStamped, WrenchStamped
+from std_msgs.msg import Bool
 from franka_tools import CollisionBehaviourInterface
 from visualization_msgs.msg import Marker
 
@@ -45,7 +45,7 @@ if __name__ == '__main__':
 
 
    # motion schedule
-    range_amplitude = 0.03
+    range_amplitude = 0.02
     horizontal_pose_schedule =  np.concatenate((np.linspace(0,range_amplitude,5), 
                                 np.linspace(range_amplitude,-range_amplitude,10), 
                                 np.linspace(-range_amplitude,range_amplitude,10),
@@ -63,6 +63,11 @@ if __name__ == '__main__':
                                 1.*vertical_range_amplitude*np.ones(10),                               
                                 1.*vertical_range_amplitude*np.ones(5)))
     schedule_length = horizontal_pose_schedule.shape[0]
+
+    # setting up publisher
+    pivot_sliding_flag_pub = rospy.Publisher('/pivot_sliding_flag', Bool, 
+        queue_size=10)
+    pivot_sliding_flag_msg = Bool()
 
 
     # set up rosbag
@@ -101,7 +106,10 @@ if __name__ == '__main__':
             vertical_pose_schedule[int(np.floor(schedule_length*t/tmax))]
 
         arm.set_cart_impedance_pose(adjusted_current_pose, 
-            stiffness=[1200, 600, 200, 100, 0, 100]) 
+            stiffness=[1200, 600, 200, 100, 0, 100])
+
+        pivot_sliding_flag_msg.data = False
+        pivot_sliding_flag_pub.publish(pivot_sliding_flag_msg)
 
         rate.sleep()
 

@@ -29,7 +29,6 @@ def update_sliding_velocity(x0, z0, contact_pose, contact_vel,
     contact_pose_stamped = ros_helper.list2pose_stamped(contact_pose)
     contact_pose_homog = ros_helper.matrix_from_pose(contact_pose_stamped)
 
-    
     # 2-D unit contact normal in world frame
     e_n = contact_pose_homog[:3, 0]
     n2D = e_n[[0,2]]

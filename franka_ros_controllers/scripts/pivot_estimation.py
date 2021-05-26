@@ -6,6 +6,8 @@ import numpy as np
 import tf.transformations as tfm
 import tf2_ros
 import rospy
+import pdb
+import copy
 
 import ros_helper
 import franka_helper
@@ -101,12 +103,46 @@ def update_center_of_rotation_estimate(pose_list):
     # extract the center location for the three points chosen
     x0=Coeff_Vec[0]
     z0=Coeff_Vec[1]
+    d=Coeff_Vec[2]
 
-    return x0,z0
+    return x0, z0, d 
+
+def update_center_of_rotation_estimate_sliding(current_pose_list,
+    pivot_xyz, d):
+
+        pose_stamped = ros_helper.list2pose_stamped(current_pose_list)
+        pose_homog = ros_helper.matrix_from_pose(pose_stamped)
+        
+        # 2-D unit contact normal in world frame
+        e_n = pose_homog[:3, 0]
+        n2D = e_n[[0,2]]
+        e_n2D = n2D/np.sqrt(np.sum(n2D ** 2))
+
+        # 2-D unit contact tangent in world frame
+        e_t = contact_pose_homog[:3, 1]
+        t2D = e_t[[0,2]]
+        e_t2D = t2D/np.sqrt(np.sum(t2D ** 2))
+
+        # new x position of the pivot
+        TOL = 0.2
+        if np.abs(e_t2D[1]) > TOL:
+
+            xp = current_pose_list[0] - d*e_n2D[0] - (
+                e_t2D[0]/e_t2D[1]) * (current_pose_list[2] 
+                    - pivot_xyz[2] - d*e_n2D[1])
+            pivot_xyz[0] = xp        
+
+        return pivot_xyz
+
 
 def torque_cone_boundary_test_callback(data):
     global torque_boundary_boolean
     torque_boundary_boolean = data.data
+
+def pivot_sliding_flag_callback(data):
+    global pivot_sliding_boolean
+    pivot_sliding_boolean = data.data
+
 
 if __name__ == '__main__':
 
@@ -119,10 +155,15 @@ if __name__ == '__main__':
     endpoint_pose_all = []
     hand_angle_all = []
 
-    torque_boundary_boolean = None
+    torque_boundary_boolean, pivot_sliding_boolean = None, None
+
     # set up torque cone boundary subscriber
     torque_cone_boundary_test_sub = rospy.Subscriber("/torque_cone_boundary_test", 
         Bool,  torque_cone_boundary_test_callback)
+
+    # set up pivot sliding flag
+    pivot_sliding_flag_sub = rospy.Subscriber("/pivot_sliding_flag", 
+        Bool,  pivot_sliding_flag_callback)
 
     # set up pivot Point publisher
     frame_message = initialize_frame()
@@ -140,17 +181,27 @@ if __name__ == '__main__':
     x0=None
     z0=None
     pivot_xyz=None
+    pivot_xyz_sticking = None
     pivot_pose=None
+    d=None
 
     # hyper parameters
     Nbatch = 250             # max number of datapoints for estimation
     update_length = 200       # number of good points before update/publish
     diff_threshold = 0.005   # threshold for new datapoints
 
+    # flags
+    previous_loop_sliding = False
+
     # make sure subscribers are receiving commands
     print("Waiting for torque boundary check")
     while torque_boundary_boolean is None:
         pass
+
+    # # make sure subscribers are receiving commands
+    # print("Waiting for pivot sliding check")
+    # while pivot_sliding_boolean is None:
+    #     pass
 
     print('starting pivot estimation loop')
     while not rospy.is_shutdown():
@@ -173,45 +224,61 @@ if __name__ == '__main__':
         if not hand_angle_all:
             hand_angle_all.append(hand_angle)
 
-        # current_quaternion
-        # endpoint_quat = franka_helper.franka_orientation2list(endpoint_pose_franka['orientation'])
-
-        # last quaternion in list
-        #endpoint_quat_old = endpoint_pose_all[-1][3:]
-
         hand_angle_old = hand_angle_all[-1]
-
-        # difference quaternion
-        #diff_quat = tfm.quaternion_multiply(endpoint_quat, 
-        #        tfm.quaternion_inverse(endpoint_quat_old))
-
         diff_angle = np.abs(hand_angle-hand_angle_old)
         while diff_angle>= 2*np.pi:
             diff_angle-= 2*np.pi
-        # diff angle
-        #diff_angle = 2 * np.arccos(diff_quat[-1])
 
-        # if measured pose is new, and the measurement is not at wrench cone boundary
-        if np.abs(diff_angle) > diff_threshold and torque_boundary_boolean:
-            
-            # append to list
-            endpoint_pose_all.append(endpoint_pose_list)
-            hand_angle_all.append(hand_angle)
 
-            # make list a FIFO buffer of length Nbatch
-            if len(endpoint_pose_all) > Nbatch:
-                endpoint_pose_all.pop(0)
-                hand_angle_all.pop(0)
+        # pivot is sliding
+        if pivot_sliding_boolean:
+            if pivot_pose is not None and torque_boundary_boolean:
 
-            # and update
-            if len(endpoint_pose_all) > update_length:
-
-                # update center of rotation estimate
-                x0, z0 = update_center_of_rotation_estimate(endpoint_pose_all)
-                pivot_xyz = [x0,endpoint_pose_all[-1][1],z0]
+                previous_loop_sliding = True
 
                 # update maker for center of rotation
-                pivot_pose = ros_helper.list2pose_stamped(pivot_xyz + [0,0,0,1])
+                pivot_xyz = update_center_of_rotation_estimate_sliding(
+                    endpoint_pose_list, pivot_xyz, d)
+                pivot_pose = ros_helper.list2pose_stamped(
+                    pivot_xyz + [0,0,0,1])
+
+        else:
+
+            if previous_loop_sliding and (pivot_xyz_sticking is not None):
+
+                for endpoint_pose in endpoint_pose_all:
+                    endpoint_pose[0] += pivot_xyz[0] - pivot_xyz_sticking[0]
+
+
+            previous_loop_sliding = False
+
+            # if measured pose is new, and the measurement is not at wrench cone boundary
+            if np.abs(diff_angle
+                ) > diff_threshold and torque_boundary_boolean:
+                
+                # append to list
+                endpoint_pose_all.append(endpoint_pose_list)
+                hand_angle_all.append(hand_angle)
+
+                # make list a FIFO buffer of length Nbatch
+                if len(endpoint_pose_all) > Nbatch:
+                    endpoint_pose_all.pop(0)
+                    hand_angle_all.pop(0)
+
+                # and update
+                if len(endpoint_pose_all) > update_length:
+
+                    # update center of rotation estimate
+                    x0, z0, d = update_center_of_rotation_estimate(
+                        endpoint_pose_all)
+                    pivot_xyz = [x0,endpoint_pose_all[-1][1],z0]
+
+                    # update maker for center of rotation
+                    pivot_pose = ros_helper.list2pose_stamped(
+                        pivot_xyz + [0,0,0,1])
+
+                    # last sticking pivot_pose
+                    pivot_xyz_sticking = copy.deepcopy(pivot_xyz)
 
 
         # only publish after estimate has settled
@@ -221,6 +288,8 @@ if __name__ == '__main__':
             pivot_xyz_pub.publish(frame_message)
             pivot_frame_broadcaster.sendTransform(frame_message)
             pivot_marker_pub.publish(marker_message)
+
+        # print(pivot_xyz_sticking)
         
         rate.sleep()    
 
