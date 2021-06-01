@@ -4,6 +4,9 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from cvxopt import matrix, solvers
 solvers.options['show_progress'] = False
+solvers.options['reltol'] = 1e-6
+solvers.options['abstol'] = 1e-6
+solvers.options['feastol'] = 1e-6
 import pdb
 
 from pbal_helper import PbalHelper
@@ -67,7 +70,7 @@ class PbalBarrierController(object):
         return -k*slacks
 
     def qp_cost_values(self, contact_pose, delta_contact_pose,
-        delta_pivot_pose, mode):
+        delta_pivot_pose, measured_wrench, Nmax, mode):
         ''' computes cost function for the QP '''
 
         # unpack
@@ -77,6 +80,8 @@ class PbalBarrierController(object):
 
         delta_s = 2 * np.arctan(delta_s/self.s_scale)/np.pi
         delta_x_piv = 2 * np.arctan(delta_x_piv/self.x_piv_scale)/np.pi
+        delta_N = 2 * np.arctan((0.5 * Nmax - measured_wrench[0])/
+            (0.2*Nmax))/np.pi
 
         contact2robot = self.pbal_helper.contact2robot(
             contact_pose)
@@ -101,7 +106,7 @@ class PbalBarrierController(object):
 
             a2 = self.concavity_sliding * np.array(
                [1, 0., 0.])
-            b2 = 1.
+            b2 = delta_N
             P  += np.outer(a2, a2)
             q  -= 2 * a2 * b2
             const += b2 ** 2
@@ -111,6 +116,8 @@ class PbalBarrierController(object):
             # s error cost slide right
             a2 = self.concavity_sliding * np.array(
                [-self.pbal_helper.mu_contact, 1., 0.])
+            # a2 = self.concavity_sliding * np.array(
+               # [0., 1., 0.])
             b2 = self.K_s * delta_s
             P  += np.outer(a2, a2)
             q  -= 2 * a2 * b2
@@ -121,6 +128,8 @@ class PbalBarrierController(object):
             # s error slide left
             a2 = self.concavity_sliding * np.array(
                [-self.pbal_helper.mu_contact, -1., 0.])
+            # a2 = self.concavity_sliding * np.array(
+            #    [0., -1., 0.])
             b2 = -self.K_s * delta_s
             P += np.outer(a2, a2)
             q -= 2 * a2 * b2
@@ -172,7 +181,7 @@ class PbalBarrierController(object):
 
         # compute cost
         P, q, _ = self.qp_cost_values(contact_pose, 
-            delta_contact_pose, delta_pivot_pose, mode)
+            delta_contact_pose, delta_pivot_pose, measured_wrench, Nmax, mode)
 
         # compute slacks
         slacks, normals, _ = self.compute_slack_values(contact_pose, 
@@ -197,6 +206,7 @@ class PbalBarrierController(object):
         elif mode == 3: # slide right pivot
             Aiq, biq = np.delete(Aiq, 6, axis=0), np.delete(biq, 6, axis=0)
 
+        # pdb.set_trace()
         # solve qp
         result = self.solve_qp_cvxopt(P, q, Aiq, biq)
 
@@ -211,7 +221,7 @@ class PbalBarrierController(object):
         Aiq_cvxopt = matrix(Aiq)
         biq_cvxopt = matrix(biq)
 
-        result = solvers.qp(P_cvxopt, q_cvxopt,
+        result = solvers.qp(P_cvxopt, q_cvxopt, 
             Aiq_cvxopt, biq_cvxopt)
         return result
 

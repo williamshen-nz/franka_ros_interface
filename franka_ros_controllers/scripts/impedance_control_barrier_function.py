@@ -227,16 +227,15 @@ if __name__ == '__main__':
     target_frame_broadcaster = tf2_ros.TransformBroadcaster()
 
     # target pose 
-    print(pivot_xyz[0])
-    load_initial_config = True
-    dt, st, theta_t, delta_t = generalized_positions[0], 0.0, -np.pi/8., 10.
-    x_piv, z_piv = 0.5, pivot_xyz[2]
+    # print(pivot_xyz[0])
+    load_initial_config = False
+    dt, st, theta_t, delta_t = generalized_positions[0], -0.02, -np.pi/10, 10.
+    x_piv, z_piv = 0.45, pivot_xyz[2]
     
     tagret_pose_contact_frame = np.array([dt, st, theta_t])
     target_pivot_xz = np.array([x_piv, z_piv])
 
-    # only works for sticking
-    mode = -1
+    mode = 1
 
     if mode == 2 or mode == 3:
         pivot_sliding_flag = True
@@ -252,21 +251,22 @@ if __name__ == '__main__':
     obj_params['mu_ground'] = MU_GROUND
     obj_params['l_contact'] = LCONTACT
 
-    theta_mult=10.
-    # impedance parameters
+    theta_mult = 10.
+    x_pivot_mult = 200.
+        # impedance parameters
     param_dict = dict()
     param_dict['obj_params'] = obj_params
     param_dict['K_theta'] = 25.0*theta_mult
     param_dict['K_s'] = 10.
-    param_dict['K_x_pivot'] = 10.
+    param_dict['K_x_pivot'] = (3.) * (0.03/5.) * 10. * x_pivot_mult
     param_dict['trust_region'] = np.array([1., 1., 3., 3., 1., 1., 1.,1.])
     param_dict['concavity_rotating'] = 6.*theta_mult
     param_dict['concavity_sliding'] = .3
-    param_dict['concavity_x_sliding'] = .3
-    param_dict['regularization_constant'] = 0.0001
+    param_dict['concavity_x_sliding'] = .3*x_pivot_mult
+    param_dict['regularization_constant'] = 0.001
     param_dict['torque_margin'] = 0.006 * NMAX
     param_dict['s_scale'] = 1/2000.
-    param_dict['x_piv_scale'] = 1/2000.
+    param_dict['x_piv_scale'] = 0.03/5.
 
     # create inverse model
     pbc = PbalBarrierController(param_dict)
@@ -333,7 +333,9 @@ if __name__ == '__main__':
             pbc.pivot = np.array([pivot_xyz[0], pivot_xyz[2]])
             pbc.mgl = mgl
             pbc.theta0 = theta0
-            pbc.mu_contact = robot_friction_coeff
+            pbc.mu_contact = max(0.1, robot_friction_coeff)
+
+            print(pbc.mu_contact)
             
             # snapshot of current generalized position estimate
             contact_pose = copy.deepcopy(generalized_positions)
@@ -353,7 +355,7 @@ if __name__ == '__main__':
             try:
                 wrench_increment_contact = pbc.solve_qp(measured_contact_wrench, \
                     contact_pose, delta_contact_pose, delta_pivot_pose, mode, NMAX)           
-            except IndexError:
+            except Exception as e:
                 print("couldn't find solution")
                 break
 
@@ -402,8 +404,10 @@ if __name__ == '__main__':
             measured_wrench_contact_list.append(measured_contact_wrench)
 
             # store impedances
-            impedance_target_list.append(impedance_target)
+            impedance_target_copy = copy.deepcopy(impedance_target)
+            impedance_target_list.append(impedance_target_copy)
 
+            # print(impedance_target)
             print(np.concatenate([contact_pose, pbc.pivot]))
 
             rate.sleep()
@@ -447,6 +451,10 @@ if __name__ == '__main__':
             ax[i].plot(t_array, pivot_xz_array[:, i-3], 'b', label='measured')
         ax[i].set_ylabel(labels[i])
         # ax[i].legend()
+
+    ax[3].plot(t_array, impedance_target_array[:, 0], 'r')
+    print("hello")
+    print(impedance_target_array)
 
 
     print("plotting")
