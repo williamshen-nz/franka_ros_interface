@@ -11,10 +11,10 @@ if __name__ == "__main__":
     # object parameters
     obj_params = dict()
     obj_params['pivot'] = np.array([0., 0.])
-    obj_params['mgl'] = 0.2
-    obj_params['theta0'] = 0.
-    obj_params['mu_contact'] = 0.15
-    obj_params['mu_ground'] = 0.3
+    obj_params['mgl'] = 0.1
+    obj_params['theta0'] = 0
+    obj_params['mu_contact'] = 0.2
+    obj_params['mu_ground'] = 1.0
     obj_params['l_contact'] = 0.065
 
     # position control parameters
@@ -54,10 +54,16 @@ if __name__ == "__main__":
         'Sticking', 'Robot sliding right', 'Robot sliding left',
         'Pivot sliding left', 'Pivot sliding right'
     ]
+    is_feasible_sticking = is_feasible[:, :, 0]
+
     for mode, ax in enumerate(axs):
         is_feasible_mode = is_feasible[:, :, mode]
+        mask_feasible = (is_feasible_mode == 1) * (is_feasible_sticking == 1)
         ax.scatter(s_grid[is_feasible_mode == 1],
                    (180 / np.pi) * theta_grid[is_feasible_mode == 1],
+                   color='y')
+        ax.scatter(s_grid[mask_feasible],
+                   (180 / np.pi) * theta_grid[mask_feasible],
                    color='g')
         ax.scatter(s_grid[is_feasible_mode == 0],
                    (180 / np.pi) * theta_grid[is_feasible_mode == 0],
