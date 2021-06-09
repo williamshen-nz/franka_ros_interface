@@ -51,16 +51,24 @@ if __name__ == '__main__':
                                 np.linspace(-range_amplitude,range_amplitude,10),
                                 np.linspace(range_amplitude,-range_amplitude,10),  
                                 np.linspace(-range_amplitude,range_amplitude,10),
-                                np.linspace(range_amplitude,-range_amplitude,10),                                
+                                np.linspace(range_amplitude,-range_amplitude,10),
+                                np.linspace(-range_amplitude,range_amplitude,10),
+                                np.linspace(range_amplitude,-range_amplitude,10),
+                                np.linspace(-range_amplitude,range_amplitude,10),
+                                np.linspace(range_amplitude,-range_amplitude,10),                               
                                 np.linspace(-range_amplitude,0,5)))
 
-    vertical_range_amplitude = 0.20
+    vertical_range_amplitude = 0.2
     vertical_pose_schedule = np.concatenate((1.*vertical_range_amplitude*np.ones(5), 
                                 1.*vertical_range_amplitude*np.ones(10),
                                 1.*vertical_range_amplitude*np.ones(10), 
                                 1.*vertical_range_amplitude*np.ones(10),
                                 1.*vertical_range_amplitude*np.ones(10), 
-                                1.*vertical_range_amplitude*np.ones(10),                               
+                                1.*vertical_range_amplitude*np.ones(10),
+                                1.*vertical_range_amplitude*np.ones(10), 
+                                1.*vertical_range_amplitude*np.ones(10),  
+                                1.*vertical_range_amplitude*np.ones(10), 
+                                1.*vertical_range_amplitude*np.ones(10),                            
                                 1.*vertical_range_amplitude*np.ones(5)))
     schedule_length = horizontal_pose_schedule.shape[0]
 
@@ -86,7 +94,7 @@ if __name__ == '__main__':
 
     # start loop
     start_time = rospy.Time.now().to_sec()
-    tmax = 30.0
+    tmax = 35.0
 
     print('starting control loop')
     while not rospy.is_shutdown():

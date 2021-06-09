@@ -148,11 +148,11 @@ if __name__ == '__main__':
     rate = rospy.Rate(RATE)
 
     # constants
-    LCONTACT = 0.065
-    MU_GROUND = 0.3
-    MU_CONTACT = 0.2
+    LCONTACT = 0.1
+    MU_GROUND = 1.0
+    MU_CONTACT = 0.1
     IMPEDANCE_STIFFNESS_LIST = [1000, 1000, 1000, 100, 30, 100]
-    NMAX = 40.
+    NMAX = 40. # was 40
 
     # arm interface
     arm = ArmInterface()
@@ -228,14 +228,15 @@ if __name__ == '__main__':
 
     # target pose 
     # print(pivot_xyz[0])
-    load_initial_config = False
-    dt, st, theta_t, delta_t = generalized_positions[0], -0.02, -np.pi/10, 10.
-    x_piv, z_piv = 0.45, pivot_xyz[2]
+    load_initial_config = True
+    dt, st, theta_t, delta_t = generalized_positions[0], -0.01, np.pi/5, 10.
+    x_piv, z_piv = 0.55, pivot_xyz[2]
+    integral_multiplier = 5
     
     tagret_pose_contact_frame = np.array([dt, st, theta_t])
     target_pivot_xz = np.array([x_piv, z_piv])
 
-    mode = 1
+    mode = -1
 
     if mode == 2 or mode == 3:
         pivot_sliding_flag = True
@@ -247,24 +248,25 @@ if __name__ == '__main__':
     obj_params['pivot'] = np.array([pivot_xyz[0], pivot_xyz[2]])
     obj_params['mgl'] = mgl
     obj_params['theta0'] = theta0
-    obj_params['mu_contact'] = robot_friction_coeff
+    obj_params['mu_contact'] = MU_CONTACT
     obj_params['mu_ground'] = MU_GROUND
     obj_params['l_contact'] = LCONTACT
 
     theta_mult = 10.
     x_pivot_mult = 200.
-        # impedance parameters
+
+    # impedance parameters
     param_dict = dict()
     param_dict['obj_params'] = obj_params
-    param_dict['K_theta'] = 25.0*theta_mult
-    param_dict['K_s'] = 10.
-    param_dict['K_x_pivot'] = (3.) * (0.03/5.) * 10. * x_pivot_mult
+    param_dict['K_theta'] = 30.0*theta_mult
+    param_dict['K_s'] = 1.
+    param_dict['K_x_pivot'] = 3. * (3.) * (0.03/5.) * 10. * x_pivot_mult
     param_dict['trust_region'] = np.array([1., 1., 3., 3., 1., 1., 1.,1.])
     param_dict['concavity_rotating'] = 6.*theta_mult
-    param_dict['concavity_sliding'] = .3
+    param_dict['concavity_sliding'] = 0.3
     param_dict['concavity_x_sliding'] = .3*x_pivot_mult
-    param_dict['regularization_constant'] = 0.001
-    param_dict['torque_margin'] = 0.006 * NMAX
+    param_dict['regularization_constant'] = 0.00001
+    param_dict['torque_margin'] = 0.002 * NMAX
     param_dict['s_scale'] = 1/2000.
     param_dict['x_piv_scale'] = 0.03/5.
 
@@ -333,7 +335,7 @@ if __name__ == '__main__':
             pbc.pivot = np.array([pivot_xyz[0], pivot_xyz[2]])
             pbc.mgl = mgl
             pbc.theta0 = theta0
-            pbc.mu_contact = max(0.1, robot_friction_coeff)
+            pbc.mu_contact = MU_CONTACT #robot_friction_coeff #max(0.1, robot_friction_coeff)
 
             print(pbc.mu_contact)
             
@@ -367,7 +369,7 @@ if __name__ == '__main__':
             # compute impedance increment
             impedance_increment_robot = wrench_increment_robot / np.array(
                 IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
-            impedance_target += 5. * impedance_increment_robot / RATE            
+            impedance_target += integral_multiplier * impedance_increment_robot / RATE            
 
             # make pose to send to franka
             waypoint_pose_list = robot2_pose_list(impedance_target[0],
@@ -453,8 +455,8 @@ if __name__ == '__main__':
         # ax[i].legend()
 
     ax[3].plot(t_array, impedance_target_array[:, 0], 'r')
-    print("hello")
-    print(impedance_target_array)
+    # print("hello")
+    # print(impedance_target_array)
 
 
     print("plotting")

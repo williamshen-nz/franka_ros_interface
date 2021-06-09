@@ -92,24 +92,15 @@ class PbalBarrierController(object):
         P = np.outer(a1, a1)
         q = -2 * a1 * b1
         const = b1 ** 2
-        
-        if mode == 0 and delta_s < 0:
-            mode = -1
-        if mode == 1 and delta_s > 0:
-            mode = -1
-        if mode == 2 and delta_x_piv < 0:
-            mode = -1
-        if mode == 3 and delta_x_piv > 0:
-            mode = -1
 
         if mode == -1:   # sticking, sticking
 
-            a2 = self.concavity_sliding * np.array(
+            a3 = self.concavity_sliding * np.array(
                [1, 0., 0.])
-            b2 = delta_N
-            P  += np.outer(a2, a2)
-            q  -= 2 * a2 * b2
-            const += b2 ** 2
+            b3 = delta_N
+            P  += np.outer(a3, a3)
+            q  -= 2 * a3 * b3
+            const += b3 ** 2
             
         elif mode == 0:    # sticking pivot, robot slide right
 
@@ -169,6 +160,20 @@ class PbalBarrierController(object):
         mode 1: sticking pivot, robot slide left
         mode not in [0, 1]: 
         ''' 
+
+        # unpack        
+        delta_s = delta_contact_pose[1]
+        delta_x_piv = delta_pivot_pose[0]
+
+        if mode == 0 and delta_s < 0:
+            mode = -1
+        if mode == 1 and delta_s > 0:
+            mode = -1
+        if mode == 2 and delta_x_piv < 0:
+            mode = -1
+        if mode == 3 and delta_x_piv > 0:
+            mode = -1
+        
 
         # set mu at robot contact
         # mu_contact = self.pbal_helper.mu_contact        
