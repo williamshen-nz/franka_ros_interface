@@ -182,19 +182,6 @@ class PbalImpedanceInverseModel(object):
         Aeq_aux, beq_aux = self.static_equilbrium_robot_aux()
         beq_aux += Etheta
 
-        # robot2contact = self.pbal_helper.contact2robot(
-        #     self.contact_pose_target)
-
-        # pdb.set_trace()
-
-        # # constraint ft = Es
-        # Afric_aux  = np.concatenate([np.dot(np.array([0., 1., 0.]), robot2contact), np.array([0.])])
-        # bfric_aux = np.array([Es])
-
-        # # combine eq constraints
-        # Aeq_aux = np.vstack([Aeq_aux, Afric_aux])
-        # beq_aux = np.concatenate([beq_aux, bfric_aux])
-
         # keep only torque constraints
         Aline_aux, bline_aux = self.wrench_cone_constraints_line_robot_aux()
         bline_aux[0] += Es
@@ -241,18 +228,25 @@ class PbalImpedanceInverseModel(object):
 
         if mode == -1:
             pass
-        elif mode == 0:
+        elif mode == 0:  # robot slide right
             Aline_r[0, :] *= -1
             bline_r[0] *= -1
-        elif mode == 1:
+        elif mode == 1:  # robot slide left
             Aline_r[1, :] *= -1
             bline_r[1] *= -1
+        elif mode == 2:  # pivot slide left
+            Apivot_r[0, :] *= -1
+            bpivot_r[0] *= -1
+        elif mode == 3:  # pivot slide right
+            Apivot_r[1, :] *= -1
+            bpivot_r[1] *= -1
         else:
             raise RuntimeError("mode not implemented yet")
 
         Aiq = np.vstack([Aline_r, Apivot_r, Anormal_r])
         biq = np.concatenate([bline_r, bpivot_r, bnormal_r])
 
+        # pdb.set_trace
         cost = np.zeros(3)
 
         result = self.solve_lp_cvxopt(cost, Aeq_r, beq_r, Aiq, biq)
@@ -260,6 +254,17 @@ class PbalImpedanceInverseModel(object):
         if result['status'] == 'optimal':
             print("solution found")
             robot_wrench = np.squeeze(np.array(result['x']))
+        elif result['status'] == 'unknown':
+
+            robot_wrench = np.squeeze(np.array(result['x']))
+
+            if np.abs(np.dot(Aeq_r, robot_wrench) - beq_r) <= 1e-6 and np.all(
+                    np.dot(Aiq, robot_wrench) - biq <= 1e-6):
+                print("solution found")
+            else:
+                print("no solution found")
+                robot_wrench = None
+
         else:
             print("no solution found")
             robot_wrench = None
