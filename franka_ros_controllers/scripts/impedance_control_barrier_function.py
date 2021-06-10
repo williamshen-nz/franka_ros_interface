@@ -16,7 +16,7 @@ from geometry_msgs.msg import TransformStamped, PoseStamped, WrenchStamped
 from std_msgs.msg import Float32MultiArray, Float32, Bool
 from franka_tools import CollisionBehaviourInterface
 
-from pbal_barrier_controller import PbalBarrierController
+from models.pbal_barrier_controller import PbalBarrierController
 
 def initialize_frame():
     frame_message = TransformStamped()
@@ -190,7 +190,6 @@ if __name__ == '__main__':
         queue_size=10)
     pivot_sliding_flag_msg = Bool()
 
-
     # make sure subscribers are receiving commands
     print("Waiting for pivot estimate to stabilize")
     while pivot_xyz is None:
@@ -228,8 +227,8 @@ if __name__ == '__main__':
 
     # target pose 
     # print(pivot_xyz[0])
-    load_initial_config = True
-    dt, st, theta_t, delta_t = generalized_positions[0], -0.01, np.pi/5, 10.
+    load_initial_config = False
+    dt, st, theta_t, delta_t = generalized_positions[0], -0.01, np.pi/6, 10.
     x_piv, z_piv = 0.55, pivot_xyz[2]
     integral_multiplier = 5
     
@@ -248,7 +247,12 @@ if __name__ == '__main__':
     obj_params['pivot'] = np.array([pivot_xyz[0], pivot_xyz[2]])
     obj_params['mgl'] = mgl
     obj_params['theta0'] = theta0
-    obj_params['mu_contact'] = MU_CONTACT
+    
+    if robot_friction_coeff is not None:
+        obj_params['mu_contact'] = robot_friction_coeff
+    else: 
+        obj_params['mu_contact'] = MU_CONTACT
+
     obj_params['mu_ground'] = MU_GROUND
     obj_params['l_contact'] = LCONTACT
 

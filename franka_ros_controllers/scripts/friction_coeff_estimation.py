@@ -28,7 +28,6 @@ def torque_cone_boundary_test_callback(data):
     torque_boundary_boolean = data.data
 
 
-
 if __name__ == '__main__':
 
     rospy.init_node("friction_coeff_estimator")
@@ -54,19 +53,19 @@ if __name__ == '__main__':
     robot_friction_estimate_pub = rospy.Publisher('/robot_friction_estimate', Float32, 
         queue_size=10)
 
-    # make sure subscribers are receiving commands
-    print("Waiting for end effector wrench")
-    while end_effector_wrench_in_end_effector_frame is None:
-        rospy.sleep(0.1)
+    # # make sure subscribers are receiving commands
+    # print("Waiting for end effector wrench")
+    # while end_effector_wrench_in_end_effector_frame is None:
+    #     rospy.sleep(0.1)
 
-    print("Waiting for generalized velocities")
-    while generalized_velocities is None:
-        rospy.sleep(0.1)
+    # print("Waiting for generalized velocities")
+    # while generalized_velocities is None:
+    #     rospy.sleep(0.1)
 
-    # make sure subscribers are receiving commands
-    print("Waiting for torque boundary check")
-    while torque_boundary_boolean is None:
-        rospy.sleep(0.1)
+    # # make sure subscribers are receiving commands
+    # print("Waiting for torque boundary check")
+    # while torque_boundary_boolean is None:
+    #     rospy.sleep(0.1)
 
     # initialize
     generalized_velocities_list = []
@@ -86,38 +85,41 @@ if __name__ == '__main__':
     print("starting force collection")
     while not rospy.is_shutdown():
 
-        # end effector 2D wrench
-        end_effector_2D_wrench = get_xy_wrench(ros_helper.wrench_stamped2list(
-            end_effector_wrench_in_end_effector_frame))
+        if (end_effector_wrench_in_end_effector_frame is not None) and (
+            generalized_velocities is not None) and (torque_boundary_boolean is not None):
 
-        # if we are sliding
-        if (generalized_velocities.data[1] > sliding_threshold) and torque_boundary_boolean:
-            
-            # if is new a velocity 
-            if len(generalized_velocities_list)==0 or \
-                generalized_velocities_list[-1][1]!= generalized_velocities.data[1]:
+            # end effector 2D wrench
+            end_effector_2D_wrench = get_xy_wrench(ros_helper.wrench_stamped2list(
+                end_effector_wrench_in_end_effector_frame))
+
+            # if we are sliding
+            if (generalized_velocities.data[1] > sliding_threshold) and torque_boundary_boolean:
                 
-                num_measurements+=1. # update counter
+                # if is new a velocity 
+                if len(generalized_velocities_list)==0 or \
+                    generalized_velocities_list[-1][1]!= generalized_velocities.data[1]:
+                    
+                    num_measurements+=1. # update counter
 
-                # frition measurement
-                friction_measurement=np.abs(end_effector_2D_wrench[1]
-                    )/np.abs(end_effector_2D_wrench[0])
-                friction_list.append(friction_measurement)
+                    # frition measurement
+                    friction_measurement=np.abs(end_effector_2D_wrench[1]
+                        )/np.abs(end_effector_2D_wrench[0])
+                    friction_list.append(friction_measurement)
 
-                # update estimate
-                friction_estimate=(friction_measurement/num_measurements) + (
-                    (num_measurements-1.)/num_measurements)*friction_estimate
+                    # update estimate
+                    friction_estimate=(friction_measurement/num_measurements) + (
+                        (num_measurements-1.)/num_measurements)*friction_estimate
 
-                # append
-                end_effector_2D_wrench_list.append(end_effector_2D_wrench)
-                generalized_velocities_list.append(generalized_velocities.data)
+                    # append
+                    end_effector_2D_wrench_list.append(end_effector_2D_wrench)
+                    generalized_velocities_list.append(generalized_velocities.data)
 
-        # publish and sleep
-        if num_measurements > 0:
-            friction_estimate_message.data = friction_estimate
-            robot_friction_estimate_pub.publish(friction_estimate_message)  
-        else:         
-            friction_estimate_message.data = NOMINAL_FRICTION_VAL
-            robot_friction_estimate_pub.publish(friction_estimate_message)  
+            # publish and sleep
+            if num_measurements > 0:
+                friction_estimate_message.data = friction_estimate
+                robot_friction_estimate_pub.publish(friction_estimate_message)  
+            else:         
+                friction_estimate_message.data = NOMINAL_FRICTION_VAL
+                robot_friction_estimate_pub.publish(friction_estimate_message)  
 
         rate.sleep()    

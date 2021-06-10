@@ -89,7 +89,6 @@ if __name__ == '__main__':
                                                       obj_apriltag_in_world_pose, frame_id = "base")
 
         update_marker_pose(marker_apriltag_in_world_pose,marker_message)
-        #pdb.set_trace()
 
         #4c. publish and sleep
         obj_apriltag_pose_in_world_from_camera_pub.publish(obj_apriltag_in_world_pose)

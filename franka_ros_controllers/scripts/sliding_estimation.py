@@ -252,43 +252,46 @@ if __name__ == '__main__':
 
     # fig, axs = plt.subplots(1,1)
     axs = None
-    # plt.show()
 
     print("Starting to publish sliding velocity/position")
     while not rospy.is_shutdown():
 
-        # face_center franka pose
-        endpoint_pose_franka = arm.endpoint_pose()
+        if (pivot_xyz is not None) and (torque_boundary_boolean is not None
+            ) and (torque_cone_boundary_flag is not None):
 
-        # face_center list
-        endpoint_pose_list = franka_helper.franka_pose2list(endpoint_pose_franka)
+            # face_center franka pose
+            endpoint_pose_franka = arm.endpoint_pose()
 
-        # face center velocity franka        
-        endpoint_velocity = arm.endpoint_velocity()
+            # face_center list
+            endpoint_pose_list = franka_helper.franka_pose2list(endpoint_pose_franka)
 
-        # face center velocity list
-        endpoint_velocity_list = franka_helper.franka_velocity2list(
-            endpoint_velocity) 
+            # face center velocity franka        
+            endpoint_velocity = arm.endpoint_velocity()
 
-        # axs.invert_xaxis()
-        # update sliding velocity
-        ee_vel_contact_frame, ee_pos_contact_frame, tht_hand, axs = update_sliding_velocity(
-            pivot_xyz[0], pivot_xyz[2], endpoint_pose_list,
-            endpoint_velocity_list, torque_cone_boundary_flag, 
-            ee_pos_contact_frame_old, LCONTACT, RATE, axs)
-        # axs.axis('equal')
-        # axs.set_xlim([0.1, -0.1])
-        # axs.set_ylim([0.0, 0.2])
-        # plt.pause(0.01)
+            # face center velocity list
+            endpoint_velocity_list = franka_helper.franka_velocity2list(
+                endpoint_velocity) 
 
-        # input("Press enter to continue")
+            # axs.invert_xaxis()
+            # update sliding velocity
+            ee_vel_contact_frame, ee_pos_contact_frame, tht_hand, axs = update_sliding_velocity(
+                pivot_xyz[0], pivot_xyz[2], endpoint_pose_list,
+                endpoint_velocity_list, torque_cone_boundary_flag, 
+                ee_pos_contact_frame_old, LCONTACT, RATE, axs)
+            # axs.axis('equal')
+            # axs.set_xlim([0.1, -0.1])
+            # axs.set_ylim([0.0, 0.2])
+            # plt.pause(0.01)
 
-        # update messages
-        position_msg.data = ee_pos_contact_frame
-        velocity_msg.data = ee_vel_contact_frame
-        ee_pos_contact_frame_old = ee_pos_contact_frame
+            # input("Press enter to continue")
 
-        # publish
-        generalized_positions_pub.publish(position_msg)
-        generalized_velocities_pub.publish(velocity_msg)
+            # update messages
+            position_msg.data = ee_pos_contact_frame
+            velocity_msg.data = ee_vel_contact_frame
+            ee_pos_contact_frame_old = ee_pos_contact_frame
+
+            # publish
+            generalized_positions_pub.publish(position_msg)
+            generalized_velocities_pub.publish(velocity_msg)
+            
         rate.sleep()

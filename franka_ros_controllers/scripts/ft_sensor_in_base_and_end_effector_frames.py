@@ -17,7 +17,7 @@ import numpy as np
 ft_wrench_in_ft_sensor_frame = "/netft/netft_data"
 
 # length of the end effect. this should really be placed in another file
-LCONTACT = 0.065
+LCONTACT = 0.1
 
 # Minimum required normal force
 NORMAL_FORCE_THRESHOLD = .05

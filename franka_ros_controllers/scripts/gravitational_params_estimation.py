@@ -53,17 +53,15 @@ if __name__ == '__main__':
     rospy.sleep(0.5)
 
     # globals
-    external_wrench, robot_angle = None, None
+    external_wrench, robot_angle, torque_boundary_boolean = None, None, None
 
     # set up subscribers
     external_force_sub = rospy.Subscriber("/external_wrench_in_pivot", 
         WrenchStamped,  external_wrench_callback)
 
     generalized_positions_sub = rospy.Subscriber("/generalized_positions", 
-        Float32MultiArray,  hand_orientation_callback)
+        Float32MultiArray,  hand_orientation_callback)    
 
-    torque_boundary_boolean = None
-    # set up torque cone boundary subscriber
     torque_cone_boundary_test_sub = rospy.Subscriber("/torque_cone_boundary_test", 
         Bool,  torque_cone_boundary_test_callback)
 
@@ -95,7 +93,7 @@ if __name__ == '__main__':
     robot_orientation_list = []
 
     # hyper parameters
-    Nbatch = 500                         # max number of datapoints for estimation
+    Nbatch = 500                          # max number of datapoints for estimation
     delta_angle_threshold = np.pi/12      # number of good points before update/publish
     diff_threshold = 0.001                # threshold for new datapoints
 
@@ -109,63 +107,57 @@ if __name__ == '__main__':
     print('starting to estimate theta0 and mgl')
     while not rospy.is_shutdown():
 
-        # get hand orientation
-        external_wrench_list = ros_helper.wrench_stamped2list(external_wrench)
+        if (external_wrench is not None) and (robot_angle is not
+            None) and (torque_boundary_boolean is not None):
 
-        # update min and max angle
-        if robot_angle > max_angle:
-            max_angle = robot_angle
+            # get hand orientation
+            external_wrench_list = ros_helper.wrench_stamped2list(external_wrench)
 
-        if robot_angle < min_angle:
-            min_angle = robot_angle
+            # update min and max angle
+            if robot_angle > max_angle:
+                max_angle = robot_angle
 
-        # append if empty
-        if not robot_orientation_list:
-            gravitational_torque_list.append(external_wrench_list[-2])
-            robot_orientation_list.append(robot_angle)
+            if robot_angle < min_angle:
+                min_angle = robot_angle
 
-        # if measured pose is new and the measurement is not at wrench cone boundary
-        if (np.abs(robot_angle - robot_orientation_list[-1]) > diff_threshold) and torque_boundary_boolean:
-            
-            # append to list
-            gravitational_torque_list.append(external_wrench_list[-2])
-            robot_orientation_list.append(robot_angle)
+            # append if empty
+            if not robot_orientation_list:
+                gravitational_torque_list.append(external_wrench_list[-2])
+                robot_orientation_list.append(robot_angle)
 
-            # make list a FIFO buffer of length Nbatch
-            if len(robot_orientation_list) > Nbatch:
-                print("nbatch long")
-                robot_orientation_list.pop(0)
-                gravitational_torque_list.pop(0)
+            # if measured pose is new and the measurement is not at wrench cone boundary
+            if (np.abs(robot_angle - robot_orientation_list[-1]) > diff_threshold) and torque_boundary_boolean:
+                
+                # append to list
+                gravitational_torque_list.append(external_wrench_list[-2])
+                robot_orientation_list.append(robot_angle)
 
-            # and update
-            if (max_angle - min_angle) > delta_angle_threshold:
-                mgl, theta0 = update_gravity_params(robot_orientation_list, 
-                    gravitational_torque_list)
-                publish_flag = True
+                # make list a FIFO buffer of length Nbatch
+                if len(robot_orientation_list) > Nbatch:
+                    print("nbatch long")
+                    robot_orientation_list.pop(0)
+                    gravitational_torque_list.pop(0)
 
-
-        # only publish if estimate has settled
-        if publish_flag: 
-            mgl_msg.data = mgl
-            theta0_msg.data = theta0
-
-            # grav_params_vis_msg.header.stamp = rospy.Time.now()
-            grav_params_vis_msg = ros_helper.list2wrench_stamped([
-                mgl*np.sin(robot_angle-theta0), 0., 
-                mgl*np.cos(robot_angle-theta0), 0., 0., 0.])
-            grav_params_vis_msg.header.frame_id = 'pivot'
-
-            gravity_torque_pub.publish(mgl_msg)
-            com_ray_pub.publish(theta0_msg)
-            grav_params_vis_pub.publish(grav_params_vis_msg)
-
-        rate.sleep()    
+                # and update
+                if (max_angle - min_angle) > delta_angle_threshold:
+                    mgl, theta0 = update_gravity_params(robot_orientation_list, 
+                        gravitational_torque_list)
+                    publish_flag = True
 
 
-    #         # current orientation
-    # endpoint_pose_list = franka_helper.franka_pose2list(arm.endpoint_pose())
-    # endpoint_pose_stamped = ros_helper.list2pose_stamped(endpoint_pose_list)
-    # endpoint_homog_trans = ros_helper.matrix_from_pose(endpoint_pose_stamped)
-    # hand_normal_x = endpoint_homog_trans[0,0]
-    # hand_normal_z = endpoint_homog_trans[2,0]
-    # return -np.arctan2(hand_normal_x, -hand_normal_z)
+            # only publish if estimate has settled
+            if publish_flag: 
+                mgl_msg.data = mgl
+                theta0_msg.data = theta0
+
+                # grav_params_vis_msg.header.stamp = rospy.Time.now()
+                grav_params_vis_msg = ros_helper.list2wrench_stamped([
+                    mgl*np.sin(robot_angle-theta0), 0., 
+                    mgl*np.cos(robot_angle-theta0), 0., 0., 0.])
+                grav_params_vis_msg.header.frame_id = 'pivot'
+
+                gravity_torque_pub.publish(mgl_msg)
+                com_ray_pub.publish(theta0_msg)
+                grav_params_vis_pub.publish(grav_params_vis_msg)
+
+        rate.sleep()

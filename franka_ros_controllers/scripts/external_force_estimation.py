@@ -14,13 +14,12 @@ from std_msgs.msg import Float32MultiArray
 from visualization_msgs.msg import Marker
 import matplotlib.pyplot as plt
 
+def get_xy_wrench_world(wrench_list):
+    return [wrench_list[0], wrench_list[2], wrench_list[-2]]
 
 def end_effector_wrench_in_end_effector_frame_callback(data):
     global end_effector_wrench_in_base_frame
     end_effector_wrench_in_base_frame = data
-
-def get_xy_wrench_world(wrench_list):
-    return [wrench_list[0], wrench_list[2], wrench_list[-2]]
         
 def pivot_xyz_callback(data):
     global pivot_xyz
@@ -49,44 +48,38 @@ if __name__ == '__main__':
     external_wrench_in_pivot_pub = rospy.Publisher('/external_wrench_in_pivot', 
         WrenchStamped, queue_size = 10)
 
-    # make sure subscribers are receiving commands
-    print("Waiting for pivot estimate to stabilize")
-    while pivot_xyz is None:
-        rospy.sleep(0.1)
-
-    print("Waiting for wrench estimate")
-    while end_effector_wrench_in_base_frame is None:
-        rospy.sleep(0.1)
-
     print("Starting to publish external force estimates")
     while not rospy.is_shutdown():
+ 
 
-        # face_center franka pose
-        endpoint_pose_franka = arm.endpoint_pose()
+        if (pivot_xyz is not None) and (end_effector_wrench_in_base_frame is not None):
 
-        # face_center list
-        endpoint_pose_list = franka_helper.franka_pose2list(endpoint_pose_franka)
+            # face_center franka pose
+            endpoint_pose_franka = arm.endpoint_pose()
 
-        # get vector from pivot to hand
-        pivot_xyz_array = np.array(pivot_xyz)
-        franka_xyz_array = endpoint_pose_franka['position']
-        pivot_to_hand = franka_xyz_array - pivot_xyz_array
+            # face_center list
+            endpoint_pose_list = franka_helper.franka_pose2list(endpoint_pose_franka)
 
-        # end effector wrench about pivot
-        pivot_wrench_base_frame = ros_helper.wrench_reference_point_change(
-            end_effector_wrench_in_base_frame, pivot_to_hand)
+            # get vector from pivot to hand
+            pivot_xyz_array = np.array(pivot_xyz)
+            franka_xyz_array = endpoint_pose_franka['position']
+            pivot_to_hand = franka_xyz_array - pivot_xyz_array
 
-        # pivot wrench 2D
-        pivot_wrench_2D_in_pivot = get_xy_wrench_world(ros_helper.wrench_stamped2list
-            (pivot_wrench_base_frame))
+            # end effector wrench about pivot
+            pivot_wrench_base_frame = ros_helper.wrench_reference_point_change(
+                end_effector_wrench_in_base_frame, pivot_to_hand)
 
-        # make Wrench Stamped
-        pivot_wrench_stamped_in_pivot = ros_helper.list2wrench_stamped([
-            pivot_wrench_2D_in_pivot[0], 0., pivot_wrench_2D_in_pivot[1], 
-            0., pivot_wrench_2D_in_pivot[2], 0.])   
-        pivot_wrench_stamped_in_pivot.header.frame_id = "pivot"
+            # pivot wrench 2D
+            pivot_wrench_2D_in_pivot = get_xy_wrench_world(ros_helper.wrench_stamped2list
+                (pivot_wrench_base_frame))
 
-        # publish
-        external_wrench_in_pivot_pub.publish(pivot_wrench_stamped_in_pivot)
-        
+            # make Wrench Stamped
+            pivot_wrench_stamped_in_pivot = ros_helper.list2wrench_stamped([
+                pivot_wrench_2D_in_pivot[0], 0., pivot_wrench_2D_in_pivot[1], 
+                0., pivot_wrench_2D_in_pivot[2], 0.])   
+            pivot_wrench_stamped_in_pivot.header.frame_id = "pivot"
+
+            # publish
+            external_wrench_in_pivot_pub.publish(pivot_wrench_stamped_in_pivot)
+            
         rate.sleep()    
