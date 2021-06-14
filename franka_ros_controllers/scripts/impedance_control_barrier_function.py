@@ -10,7 +10,8 @@ import pdb
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
-import ros_helper, franka_helper
+import franka_helper
+import models.ros_helper as ros_helper
 from franka_interface import ArmInterface 
 from geometry_msgs.msg import TransformStamped, PoseStamped, WrenchStamped
 from std_msgs.msg import Float32MultiArray, Float32, Bool
@@ -65,26 +66,8 @@ def contact2_pose_list(d, s, theta, pivot):
 
     return ros_helper.pose_stamped2list(endpoint_pose)
 
-def robot2_pose_list(x, z, theta, pivot):
-
-    # sin/cos of line contact orientation
-    sint, cost = np.sin(theta), np.cos(theta)
-    
-    # line contact orientation in world frame
-    endpoint_orien_mat = np.array([[-sint, -cost, 0], 
-        [0, 0, 1], [-cost, sint, 0]])
-
-    # line contact position in world frame
-    endpoint_position = np.array([x, pivot[1], z])
-
-    # homogenous transform w.r.t world frame
-    endpoint_homog = np.vstack([np.vstack([endpoint_orien_mat.T,  
-        endpoint_position]).T, np.array([0., 0., 0., 1.])])
-
-    # pose stamped for line contact in world frame
-    endpoint_pose = ros_helper.pose_from_matrix(endpoint_homog)
-
-    return ros_helper.pose_stamped2list(endpoint_pose)
+def robot2_pose_list(xyz_list, theta):
+    return xyz_list + ros_helper.theta_to_quatlist(theta)
 
 def world_contact2_pose_list(x, y, theta, pivot):
 
@@ -190,32 +173,32 @@ if __name__ == '__main__':
         queue_size=10)
     pivot_sliding_flag_msg = Bool()
 
-    # make sure subscribers are receiving commands
-    print("Waiting for pivot estimate to stabilize")
-    while pivot_xyz is None:
-        rospy.sleep(0.1)
-
-    # make sure subscribers are receiving commands
-    print("Waiting for generalized position estimate to stabilize")
-    while generalized_positions is None:
-        rospy.sleep(0.1)
-
-    # make sure subscribers are receiving commands
+    # make sure we have end effector wrench
     print("Waiting for end effector wrench")
     while end_effector_wrench is None:
         rospy.sleep(0.1)
 
-    print("Waiting for robot_friction_coeff")
-    while robot_friction_coeff is None:
-        rospy.sleep(0.1)
+    # make sure subscribers are receiving commands
+    # print("Waiting for pivot estimate to stabilize")
+    # if pivot_xyz is None:
+    #     rospy.sleep(0.1)
 
-    print("Waiting for theta0")
-    while theta0 is None:
-        rospy.sleep(0.1)
+    # # make sure subscribers are receiving commands
+    # print("Waiting for generalized position estimate to stabilize")
+    # while generalized_positions is None:
+    #     rospy.sleep(0.1)
 
-    print("Waiting for mgl")
-    while mgl is None:
-        rospy.sleep(0.1)
+    # print("Waiting for robot_friction_coeff")
+    # while robot_friction_coeff is None:
+    #     rospy.sleep(0.1)
+
+    # print("Waiting for theta0")
+    # while theta0 is None:
+    #     rospy.sleep(0.1)
+
+    # print("Waiting for mgl")
+    # while mgl is None:
+    #     rospy.sleep(0.1)
 
     # intialize frame
     frame_message = initialize_frame()
@@ -226,16 +209,21 @@ if __name__ == '__main__':
     target_frame_broadcaster = tf2_ros.TransformBroadcaster()
 
     # target pose 
-    # print(pivot_xyz[0])
-    load_initial_config = False
-    dt, st, theta_t, delta_t = generalized_positions[0], -0.01, np.pi/6, 10.
-    x_piv, z_piv = 0.55, pivot_xyz[2]
-    integral_multiplier = 5
-    
+    load_initial_config = True
+    if generalized_positions is None:
+        dt = 0
+    else:
+        dt = generalized_positions[0]
+
+    st, theta_t, x_piv, delta_t = 0.01, np.pi/8., 0.5, 10.
     tagret_pose_contact_frame = np.array([dt, st, theta_t])
-    target_pivot_xz = np.array([x_piv, z_piv])
+    
+    integral_multiplier = 5    
 
     mode = -1
+
+    if generalized_positions is None:
+        mode = -1
 
     if mode == 2 or mode == 3:
         pivot_sliding_flag = True
@@ -244,7 +232,11 @@ if __name__ == '__main__':
 
     # build barrier function model
     obj_params = dict()
-    obj_params['pivot'] = np.array([pivot_xyz[0], pivot_xyz[2]])
+    if pivot_xyz is None:
+        obj_params['pivot'] = None
+    else:
+        obj_params['pivot'] = np.array([pivot_xyz[0], pivot_xyz[2]])
+
     obj_params['mgl'] = mgl
     obj_params['theta0'] = theta0
     
@@ -279,30 +271,37 @@ if __name__ == '__main__':
 
     # initial impedance target
     if load_initial_config:
-        impedance_target = []
+        impedance_target_list = []
 
         # open file and read the content in a list
         with open('final_impedance_pose.txt', 'r') as filehandle:
             for line in filehandle:            
                 currentPlace = float(line[:-1]) 
-                impedance_target.append(currentPlace)
+                impedance_target_list.append(currentPlace)
 
-        impedance_target = np.array(impedance_target)
+        impedance_target = np.array(impedance_target_list)
+
+        impedance_target_6D_list = robot2_pose_list(
+            impedance_target_list[:3], 
+            impedance_target_list[3]) 
+
+        impedance_target_pose = franka_helper.list2franka_pose(
+            impedance_target_6D_list)
     else:
 
-        impedance_target_contact = generalized_positions
-        impedance_target = pbc.pbal_helper.forward_kin(
-            impedance_target_contact)
-    
-    # make pose to send to franka
-    impedance_target_6D_list = robot2_pose_list(impedance_target[0],
-        impedance_target[1],
-        impedance_target[2], 
-        pivot_xyz)
+        impedance_target_pose = arm.endpoint_pose()
+        
+        impedance_target_6D_list = franka_helper.franka_pose2list(
+            impedance_target_pose)
 
-    impedance_target_pose = franka_helper.list2franka_pose(
-        impedance_target_6D_list)
+        impedance_target_theta = ros_helper.quatlist_to_theta(
+            impedance_target_6D_list[3:])
 
+        impedance_target = np.array([
+            impedance_target_6D_list[0],
+            impedance_target_6D_list[1],
+            impedance_target_6D_list[2],
+            impedance_target_theta])
 
     arm.set_cart_impedance_pose(impedance_target_pose,
                 stiffness=IMPEDANCE_STIFFNESS_LIST)
@@ -336,34 +335,52 @@ if __name__ == '__main__':
             pivot_sliding_flag_pub.publish(pivot_sliding_flag_msg)
 
             # update estimated values in controller
-            pbc.pivot = np.array([pivot_xyz[0], pivot_xyz[2]])
+            if pivot_xyz is None:
+                pbc.pivot = None
+            else:
+                pbc.pivot = np.array([pivot_xyz[0], pivot_xyz[2]])
+
             pbc.mgl = mgl
             pbc.theta0 = theta0
-            pbc.mu_contact = MU_CONTACT #robot_friction_coeff #max(0.1, robot_friction_coeff)
-
-            print(pbc.mu_contact)
             
+            if robot_friction_coeff is not None:
+                pbc.mu_contact = robot_friction_coeff
+            else: 
+                pbc.mu_contact = MU_CONTACT
+
             # snapshot of current generalized position estimate
-            contact_pose = copy.deepcopy(generalized_positions)
+            if generalized_positions is None:
+                endpoint_pose = arm.endpoint_pose()
+                quat_list = franka_helper.franka_orientation2list(
+                    endpoint_pose['orientation'])
+                theta = ros_helper.quatlist_to_theta(quat_list)
+                contact_pose = np.array([0, 0, theta])
+            else:
+                contact_pose = copy.deepcopy(generalized_positions)
 
             # compute error
             delta_contact_pose = tagret_pose_contact_frame - contact_pose
-            delta_pivot_pose = target_pivot_xz - pbc.pivot
+
+            if pbc.pivot is None:
+                delta_x_pivot = None
+            else:
+                delta_x_pivot = x_piv - pbc.pivot[0]
 
             # measured contact wrench
-            measured_contact_wench_6D = ros_helper.wrench_stamped2list(end_effector_wrench)
+            measured_contact_wench_6D = ros_helper.wrench_stamped2list(
+                end_effector_wrench)
             measured_contact_wrench = -np.array([
                 measured_contact_wench_6D[0], 
                 measured_contact_wench_6D[1],
                 measured_contact_wench_6D[-1]])
 
             # compute wrench increment          
-            try:
-                wrench_increment_contact = pbc.solve_qp(measured_contact_wrench, \
-                    contact_pose, delta_contact_pose, delta_pivot_pose, mode, NMAX)           
-            except Exception as e:
-                print("couldn't find solution")
-                break
+            # try:
+            wrench_increment_contact = pbc.solve_qp(measured_contact_wrench, \
+                contact_pose, delta_contact_pose, delta_x_pivot, mode, NMAX)           
+            # except Exception as e:
+                # print("couldn't find solution")
+                # break
 
             # convert wrench to robot frame
             contact2robot = pbc.pbal_helper.contact2robot(contact_pose)
@@ -371,15 +388,13 @@ if __name__ == '__main__':
                 wrench_increment_contact)
 
             # compute impedance increment
-            impedance_increment_robot = wrench_increment_robot / np.array(
-                IMPEDANCE_STIFFNESS_LIST)[[0, 2, 4]]
+            impedance_increment_robot = np.insert(wrench_increment_robot, 1, 
+                0.) / np.array(IMPEDANCE_STIFFNESS_LIST)[[0, 1, 2, 4]]
             impedance_target += integral_multiplier * impedance_increment_robot / RATE            
 
             # make pose to send to franka
-            waypoint_pose_list = robot2_pose_list(impedance_target[0],
-                impedance_target[1],
-                impedance_target[2], 
-                pivot_xyz)
+            waypoint_pose_list = robot2_pose_list(impedance_target[:3].tolist(),
+                impedance_target[3])
 
             waypoint_franka_pose = franka_helper.list2franka_pose(
                 waypoint_pose_list)
@@ -402,7 +417,7 @@ if __name__ == '__main__':
             contact_pose_list.append(contact_pose)
             delta_contact_pose_list.append(delta_contact_pose)
 
-            target_pivot_xz_list.append(target_pivot_xz)
+            target_pivot_xz_list.append(x_piv)
             pivot_xz_list.append(pbc.pivot)
 
             # store wrenches
@@ -414,17 +429,18 @@ if __name__ == '__main__':
             impedance_target_list.append(impedance_target_copy)
 
             # print(impedance_target)
-            print(np.concatenate([contact_pose, pbc.pivot]))
+            print(contact_pose)
+            # print(np.concatenate([contact_pose, pbc.pivot]))
 
             rate.sleep()
 
     print('control loop completed')
 
-    # terminate rosbags
-    with open('final_impedance_pose.txt', 'w') as filehandle:
-        for listitem in impedance_target:
-                filehandle.write('%s\n' % listitem)
-    # ros_helper.terminate_rosbag()
+    # # terminate rosbags
+    # with open('final_impedance_pose.txt', 'w') as filehandle:
+    #     for listitem in impedance_target:
+    #             filehandle.write('%s\n' % listitem)
+    # # ros_helper.terminate_rosbag()
 
     # unsubscribe from topics
     pivot_xyz_sub.unregister()
@@ -446,9 +462,9 @@ if __name__ == '__main__':
     target_pivot_xz_array = np.array(target_pivot_xz_list)
 
 
-    labels = ['d', 's', 'theta', 'px', 'pz']
-    fig, ax = plt.subplots(5,1)
-    for i in range(5):
+    labels = ['d', 's', 'theta', 'px']
+    fig, ax = plt.subplots(3,1)
+    for i in range(3):
         if i < 3:
             ax[i].plot(t_array, target_pose_array[:, i], 'k', label='target')
             ax[i].plot(t_array, contact_pose_array[:, i], 'b', label='measured')
@@ -458,7 +474,7 @@ if __name__ == '__main__':
         ax[i].set_ylabel(labels[i])
         # ax[i].legend()
 
-    ax[3].plot(t_array, impedance_target_array[:, 0], 'r')
+    # ax[3].plot(t_array, impedance_target_array[:, 0], 'r')
     # print("hello")
     # print(impedance_target_array)
 

@@ -248,3 +248,43 @@ def transform_tip2tcp(listener,  pose_tip_push_start, tip_name='/apriltag_tip'):
     pose_tcp_map = compute_tip2tcp_offset(listener,  pose_tip_push_start, tip_name)
     pose_map_list = convert_ros2abb(pose_tcp_map)
     return pose_map_list
+
+def quatlist_to_theta(quat_list):
+    '''converts fraka quaternion to sagittal plane angle'''
+    
+    pose_list = [0., 0., 0.] + quat_list
+    pose_stamped = list2pose_stamped(pose_list)
+    pose_homog = matrix_from_pose(pose_stamped)
+
+    hand_normal_x = pose_homog[0,0]
+    hand_normal_z = pose_homog[2,0]
+
+    return -np.arctan2(hand_normal_x, -hand_normal_z)   
+
+
+def theta_to_quatlist(theta):
+    '''converts sagittal plane angle to fraka quaternion'''
+
+    # sin/cos of line contact orientation
+    sint, cost = np.sin(theta), np.cos(theta)
+    
+    # line contact orientation in world frame
+    endpoint_orien_mat = np.array([[-sint, -cost, 0], 
+        [0, 0, 1], [-cost, sint, 0]])
+
+    # zero position
+    endpoint_position = np.array([0., 0., 0.])
+
+    # homogenous transform w.r.t world frame
+    endpoint_homog = np.vstack([np.vstack([endpoint_orien_mat.T,  
+        endpoint_position]).T, np.array([0., 0., 0., 1.])])
+
+    # pose stamped in world frame
+    endpoint_pose = pose_from_matrix(endpoint_homog)
+
+    # pose list in world frame
+    endpoint_pose_list = pose_stamped2list(endpoint_pose)
+
+    # return quaternion portion
+    return endpoint_pose_list[3:]
+

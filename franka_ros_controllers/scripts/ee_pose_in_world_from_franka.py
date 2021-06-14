@@ -72,4 +72,5 @@ if __name__ == '__main__':
         ee_pose_in_world_from_franka_pub.publish(ee_pose_in_world_pose_stamped)
         face_contact_center_pose_in_base_frame_pub.publish(
             face_contact_center_pose_in_base_frame)
+        
         rate.sleep()

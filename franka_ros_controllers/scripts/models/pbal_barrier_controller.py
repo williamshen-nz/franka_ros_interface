@@ -70,18 +70,19 @@ class PbalBarrierController(object):
         return -k*slacks
 
     def qp_cost_values(self, contact_pose, delta_contact_pose,
-        delta_pivot_pose, measured_wrench, Nmax, mode):
+        delta_x_piv, measured_wrench, Nmax, mode):
         ''' computes cost function for the QP '''
 
         # unpack
         d, s, theta = contact_pose[0], contact_pose[1], contact_pose[2]
         delta_s, delta_theta = delta_contact_pose[1], delta_contact_pose[2]
-        delta_x_piv = delta_pivot_pose[0]
 
         delta_s = 2 * np.arctan(delta_s/self.s_scale)/np.pi
-        delta_x_piv = 2 * np.arctan(delta_x_piv/self.x_piv_scale)/np.pi
         delta_N = 2 * np.arctan((0.5 * Nmax - measured_wrench[0])/
             (0.2*Nmax))/np.pi
+
+        if delta_x_piv is not None:
+            delta_x_piv = 2 * np.arctan(delta_x_piv/self.x_piv_scale)/np.pi
 
         contact2robot = self.pbal_helper.contact2robot(
             contact_pose)
@@ -153,7 +154,7 @@ class PbalBarrierController(object):
         
 
     def solve_qp(self, measured_wrench, contact_pose, 
-        delta_contact_pose, delta_pivot_pose, mode, Nmax):
+        delta_contact_pose, delta_x_piv, mode, Nmax):
         '''
         mode -1: sticking, sticking
         mode 0: sticking pivot, robot slide right 
@@ -163,7 +164,6 @@ class PbalBarrierController(object):
 
         # unpack        
         delta_s = delta_contact_pose[1]
-        delta_x_piv = delta_pivot_pose[0]
 
         if mode == 0 and delta_s < 0:
             mode = -1
@@ -174,25 +174,15 @@ class PbalBarrierController(object):
         if mode == 3 and delta_x_piv > 0:
             mode = -1
         
-
-        # set mu at robot contact
-        # mu_contact = self.pbal_helper.mu_contact        
-        # if mode == -1:
-        #     pass
-        # elif mode == 0 or mode == 1:
-        #     self.pbal_helper.mu_contact *= 20.
-        # else:
-        #     raise RuntimeError("Invalid mode: must be -1, 0, or 1")   
-
         # compute cost
         P, q, _ = self.qp_cost_values(contact_pose, 
-            delta_contact_pose, delta_pivot_pose, measured_wrench, Nmax, mode)
+            delta_contact_pose, delta_x_piv, measured_wrench, Nmax, mode)
 
         # compute slacks
         slacks, normals, _ = self.compute_slack_values(contact_pose, 
             measured_wrench, Nmax)
 
-        # compute valube of barrier functi
+        # compute valube of barrier function
         fbarrier = self.barrier_function_values(slacks)
   
         # inequality constraints
@@ -211,7 +201,6 @@ class PbalBarrierController(object):
         elif mode == 3: # slide right pivot
             Aiq, biq = np.delete(Aiq, 6, axis=0), np.delete(biq, 6, axis=0)
 
-        # pdb.set_trace()
         # solve qp
         result = self.solve_qp_cvxopt(P, q, Aiq, biq)
 
