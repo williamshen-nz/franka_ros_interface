@@ -1,0 +1,16 @@
+<?xml version="1.0" ?>
+<launch>
+  <!--- parameters -->
+  <group ns="obj_params">
+    <rosparam file="$(find franka_ros_controllers)/config/obj_config.yaml" />
+  </group>
+
+  <group ns="estimator_params">
+    <rosparam file="$(find franka_ros_controllers)/config/estimator_config.yaml" />
+  </group>
+
+  <group ns="controller_params">
+    <rosparam file="$(find franka_ros_controllers)/config/controller_config.yaml" />
+  </group>
+  
+</launch>

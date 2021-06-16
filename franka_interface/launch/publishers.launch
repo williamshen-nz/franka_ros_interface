@@ -19,7 +19,7 @@
   <node name="obj_apriltag_pose_in_world_from_camera" pkg="franka_ros_controllers" type="obj_apriltag_pose_in_world_from_camera.py" respawn="true" >
   </node>
 
-  <node name="ft_sensor_in_base_and_end_effector_frame" pkg="franka_ros_controllers" type="ft_sensor_in_base_and_end_effector_frames.py" respawn="true" >
+  <node name="ft_sensor_in_base_and_end_effector_frame" pkg="franka_ros_controllers" type=  "ft_sensor_in_base_and_end_effector_frames.py" respawn="true" >
   </node>
 
   <node name="ee_pose_in_world_from_franka" pkg="franka_ros_controllers" type="ee_pose_in_world_from_franka.py" respawn="true" >
@@ -31,6 +31,8 @@
 
   <!--- face center in april tag -->
   <node pkg="tf" type="static_transform_publisher" name="panda_hand_in_apriltag_frame" args=" 0 -0.0134 0 1.5708 -1.5708 0 /ee_apriltag_in_world /panda_hand_from_camera 100" />
+
+
 
 <!--   <node name="rqt_reconfigure" pkg="rqt_reconfigure" type="rqt_reconfigure" required="false" /> -->
 </launch>
