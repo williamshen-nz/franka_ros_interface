@@ -34,7 +34,7 @@ if __name__ == '__main__':
     arm = ArmInterface()
     rospy.sleep(0.5)
 
-    rate = rospy.Rate(100)
+    rate = rospy.Rate(rospy.get_param("/estimator_params/RATE"))
 
     # initialize globals
     pivot_xyz, end_effector_wrench_in_base_frame = None, None

@@ -70,26 +70,6 @@ def contact2_pose_list(d, s, theta, pivot):
 def robot2_pose_list(xyz_list, theta):
     return xyz_list + ros_helper.theta_to_quatlist(theta)
 
-
-def get_robot_world_xyz_theta(arm):
-    
-    # initial impedance target
-    pose = arm.endpoint_pose()
-    
-    sixD_list = franka_helper.franka_pose2list(
-        pose)
-
-    theta = ros_helper.quatlist_to_theta(
-        sixD_list[3:])
-
-    xyz_theta = np.array([
-        sixD_list[0],
-        sixD_list[1],
-        sixD_list[2],
-        theta])
-
-    return xyz_theta
-
 def world_contact2_pose_list(x, y, theta, pivot):
 
     # sin/cos of line contact orientation
@@ -145,11 +125,7 @@ def gravity_torque_callback(data):
     mgl = data.data
 
 def barrier_func_control_command_callback(data):
-    global command_msg_queue
-    command_msg_queue.append(data)
-    if len(command_msg_queue) > 10:
-        command_msg_queue.pop(0)
-
+    pass
 
 
 if __name__ == '__main__':
@@ -177,8 +153,7 @@ if __name__ == '__main__':
     rospy.sleep(1.0)
 
     pivot_xyz, generalized_positions, end_effector_wrench, object_apriltag_pose \
-        , robot_friction_coeff, theta0, mgl, command_msg_queue\
-        = None, None, None, None, None, None, None, []
+        , robot_friction_coeff, theta0, mgl = None, None, None, None, None, None, None
 
     # subscribers
     pivot_xyz_sub = rospy.Subscriber("/pivot_frame", 
@@ -206,10 +181,27 @@ if __name__ == '__main__':
     while end_effector_wrench is None:
         rospy.sleep(0.1)
 
-    # make sure we have a command
-    print("Waiting for control command")
-    while not command_msg_queue:
-        rospy.sleep(0.1)
+    # make sure subscribers are receiving commands
+    # print("Waiting for pivot estimate to stabilize")
+    # if pivot_xyz is None:
+    #     rospy.sleep(0.1)
+
+    # # make sure subscribers are receiving commands
+    # print("Waiting for generalized position estimate to stabilize")
+    # while generalized_positions is None:
+    #     rospy.sleep(0.1)
+
+    # print("Waiting for robot_friction_coeff")
+    # while robot_friction_coeff is None:
+    #     rospy.sleep(0.1)
+
+    # print("Waiting for theta0")
+    # while theta0 is None:
+    #     rospy.sleep(0.1)
+
+    # print("Waiting for mgl")
+    # while mgl is None:
+    #     rospy.sleep(0.1)
 
     # intialize frame
     frame_message = initialize_frame()
@@ -218,6 +210,27 @@ if __name__ == '__main__':
 
     # set up transform broadcaster
     target_frame_broadcaster = tf2_ros.TransformBroadcaster()
+
+    # target pose 
+    load_initial_config = False
+    if generalized_positions is None:
+        dt = 0
+    else:
+        dt = generalized_positions[0]
+
+    st, theta_t, x_piv, delta_t = -0.01, np.pi/8., 0.5, 10.
+    tagret_pose_contact_frame = np.array([dt, st, theta_t])    
+   
+
+    mode = 1
+
+    if generalized_positions is None:
+        mode = -1
+
+    if mode == 2 or mode == 3:
+        pivot_sliding_flag = True
+    else:
+        pivot_sliding_flag = False
 
     # build barrier function model
     obj_params = dict()
@@ -260,36 +273,75 @@ if __name__ == '__main__':
     pbc = PbalBarrierController(param_dict)
 
     # initial impedance target
-    impedance_target_pose = arm.endpoint_pose()
-    impedance_target = get_robot_world_xyz_theta(arm)
+    if load_initial_config:
+        impedance_target_list = []
+
+        # open file and read the content in a list
+        with open('final_impedance_pose.txt', 'r') as filehandle:
+            for line in filehandle:            
+                currentPlace = float(line[:-1]) 
+                impedance_target_list.append(currentPlace)
+
+        impedance_target = np.array(impedance_target_list)
+
+        impedance_target_6D_list = robot2_pose_list(
+            impedance_target_list[:3], 
+            impedance_target_list[3]) 
+
+        impedance_target_pose = franka_helper.list2franka_pose(
+            impedance_target_6D_list)
+    else:
+
+        impedance_target_pose = arm.endpoint_pose()
+        
+        impedance_target_6D_list = franka_helper.franka_pose2list(
+            impedance_target_pose)
+
+        impedance_target_theta = ros_helper.quatlist_to_theta(
+            impedance_target_6D_list[3:])
+
+        impedance_target = np.array([
+            impedance_target_6D_list[0],
+            impedance_target_6D_list[1],
+            impedance_target_6D_list[2],
+            impedance_target_theta])
 
     arm.set_cart_impedance_pose(impedance_target_pose,
                 stiffness=IMPEDANCE_STIFFNESS_LIST)
+
     rospy.sleep(1.0)
 
-    target_pose_contact_frame, state_not_exists_bool, mode = None, True, None
-    state_not_exists_when_recieved_command = True
+    # initialize lists for plotting
+    t_list = []
+    target_pose_list = []
+    contact_pose_list = []
+    delta_contact_pose_list = []
+    wrench_increment_contact_list = []
+    measured_wrench_contact_list = []
+    impedance_target_list = []
+    pivot_xz_list = []
+    target_pivot_xz_list = []
 
+    start_time = rospy.Time.now().to_sec()
     print('starting control loop')
     while not rospy.is_shutdown():
 
-            # snapshot of current generalized position estimate
-            if generalized_positions is None:
-                endpoint_pose = arm.endpoint_pose()
-                quat_list = franka_helper.franka_orientation2list(
-                    endpoint_pose['orientation'])
-                theta = ros_helper.quatlist_to_theta(quat_list)
-                contact_pose = np.array([0, 0, theta])
-                state_not_exists_bool = True
-            else:
-                contact_pose = copy.deepcopy(generalized_positions)
-                state_not_exists_bool = False
+            # current time
+            t = rospy.Time.now().to_sec() - start_time
+
+            # exit condition
+            if t > 1.5 * delta_t:
+                break
+
+            # publish if we intend to slide at pivot
+            pivot_sliding_flag_msg.data = pivot_sliding_flag
+            pivot_sliding_flag_pub.publish(pivot_sliding_flag_msg)
 
             # update estimated values in controller
             if pivot_xyz is None:
-                pbc.pbal_helper.pivot = None
+                pbc.pivot = None
             else:
-                pbc.pbal_helper.pivot = np.array([pivot_xyz[0], pivot_xyz[2]])
+                pbc.pivot = np.array([pivot_xyz[0], pivot_xyz[2]])
 
             pbc.mgl = mgl
             pbc.theta0 = theta0
@@ -299,107 +351,23 @@ if __name__ == '__main__':
             else: 
                 pbc.mu_contact = MU_CONTACT
 
-            # unpack current message
-            if command_msg_queue:
-
-                if state_not_exists_bool:
-                    state_not_exists_when_recieved_command = True
-                else:
-                    state_not_exists_when_recieved_command = False
-
-                current_msg = command_msg_queue.pop(0)
-                command_flag = current_msg.command_flag
-                mode = current_msg.mode
-
-                if command_flag == 0: # absolute move
-                    target_pose_contact_frame = np.array([contact_pose[0], 
-                        current_msg.s, current_msg.theta])
-
-                    x_piv = current_msg.x
-
-                    if state_not_exists_when_recieved_command:
-                        mode = -1
-                    
-
-                if command_flag == 1: # relative move
-
-                    delta_target_pose_contact_frame = np.array([
-                        0, current_msg.delta_s, 
-                        current_msg.delta_theta])
-
-                    if state_not_exists_when_recieved_command: 
-
-                        # current pose
-                        starting_xyz_theta_robot_frame = get_robot_world_xyz_theta(
-                            arm)
-
-                        # target pose
-                        target_xyz_theta_robot_frame = copy.deepcopy(
-                            starting_xyz_theta_robot_frame)
-
-                        if mode == -1:
-                            target_xyz_theta_robot_frame[3] += current_msg.delta_theta
-                        if mode == 0 or mode == 1:
-                            target_xyz_theta_robot_frame[0] += current_msg.delta_s * -np.cos(
-                                target_xyz_theta_robot_frame[3])
-                            target_xyz_theta_robot_frame[2] += current_msg.delta_s * np.sin(
-                                target_xyz_theta_robot_frame[3])
-                        if mode == 2 or mode == 3:
-                            target_xyz_theta_robot_frame[0] += current_msg.delta_x
-                                            
-                    else:
-                        target_pose_contact_frame = contact_pose + \
-                            delta_target_pose_contact_frame
-                        x_piv = pbc.pbal_helper.pivot[
-                            0] + current_msg.delta_x
-
-            # publish if we intend to slide at pivot
-            if mode == 2 or mode == 3:
-                pivot_sliding_flag = True
+            # snapshot of current generalized position estimate
+            if generalized_positions is None:
+                endpoint_pose = arm.endpoint_pose()
+                quat_list = franka_helper.franka_orientation2list(
+                    endpoint_pose['orientation'])
+                theta = ros_helper.quatlist_to_theta(quat_list)
+                contact_pose = np.array([0, 0, theta])
             else:
-                pivot_sliding_flag = False
-            pivot_sliding_flag_msg.data = pivot_sliding_flag
-            pivot_sliding_flag_pub.publish(pivot_sliding_flag_msg)
-
+                contact_pose = copy.deepcopy(generalized_positions)
 
             # compute error
-            if state_not_exists_when_recieved_command:
+            delta_contact_pose = tagret_pose_contact_frame - contact_pose
 
-                if current_msg.command_flag == 0: # absolute move
-                    delta_contact_pose = target_pose_contact_frame - contact_pose
-                    delta_x_pivot = 0
-                    
-                if current_msg.command_flag == 1: # relative move
-                    # current pose
-                    current_xyz_theta_robot_frame = get_robot_world_xyz_theta(
-                                arm)
-
-                    delta_theta = target_xyz_theta_robot_frame[3
-                            ] - current_xyz_theta_robot_frame[3]
-
-                    delta_x = target_xyz_theta_robot_frame[0
-                            ] - current_xyz_theta_robot_frame[0]
-
-                    delta_z = target_xyz_theta_robot_frame[2
-                            ] - current_xyz_theta_robot_frame[2]
-
-                    theta_tar = target_xyz_theta_robot_frame[3]
-
-                    delta_s = delta_x * -np.cos(theta_tar) + delta_z* np.sin(theta_tar)
-
-                    if mode == -1:
-                        delta_contact_pose = np.array([0., 0., delta_theta])
-                        delta_x_pivot = 0.
-                    if mode == 0 or mode == 1:
-                        delta_contact_pose = np.array([0., delta_s, delta_theta])
-                        delta_x_pivot = 0.
-                    if mode == 2 or mode == 3:
-                        delta_contact_pose = np.array([0., 0., delta_theta])
-                        delta_x_pivot = delta_x
-
+            if pbc.pivot is None:
+                delta_x_pivot = None
             else:
-                delta_contact_pose = target_pose_contact_frame - contact_pose
-                delta_x_pivot = x_piv - pbc.pbal_helper.pivot[0]
+                delta_x_pivot = x_piv - pbc.pivot[0]
 
             # measured contact wrench
             measured_contact_wench_6D = ros_helper.wrench_stamped2list(
@@ -444,5 +412,105 @@ if __name__ == '__main__':
             target_frame_pub.publish(frame_message)
             target_frame_broadcaster.sendTransform(frame_message)
 
+            # store time
+            t_list.append(t)
+
+            # store end-effector pose
+            target_pose_list.append(tagret_pose_contact_frame)
+            contact_pose_list.append(contact_pose)
+            delta_contact_pose_list.append(delta_contact_pose)
+
+            target_pivot_xz_list.append(x_piv)
+            pivot_xz_list.append(pbc.pivot)
+
+            # store wrenches
+            wrench_increment_contact_list.append(wrench_increment_contact)
+            measured_wrench_contact_list.append(measured_contact_wrench)
+
+            # store impedances
+            impedance_target_copy = copy.deepcopy(impedance_target)
+            impedance_target_list.append(impedance_target_copy)
+
+            # print(impedance_target)
+            print(contact_pose)
+            # print(np.concatenate([contact_pose, pbc.pivot]))
+
             rate.sleep()
 
+    print('control loop completed')
+
+    # # terminate rosbags
+    # with open('final_impedance_pose.txt', 'w') as filehandle:
+    #     for listitem in impedance_target:
+    #             filehandle.write('%s\n' % listitem)
+    # # ros_helper.terminate_rosbag()
+
+    # unsubscribe from topics
+    pivot_xyz_sub.unregister()
+    generalized_positions_sub.unregister()
+    end_effector_wrench_sub.unregister()
+    object_apriltag_pose_sub.unregister()
+    robot_friction_coeff_sub.unregister()
+
+    # convert to array
+    t_array = np.array(t_list)
+    target_pose_array = np.array(target_pose_list)
+    contact_pose_array = np.array(contact_pose_list)
+    delta_contact_pose_array = np.array(delta_contact_pose_list)
+    wrench_increment_contact_array = np.array(
+        wrench_increment_contact_list)
+    measured_wrench_contact_array = np.array(measured_wrench_contact_list)
+    impedance_target_array = np.array(impedance_target_list)
+    pivot_xz_array = np.array(pivot_xz_list)
+    target_pivot_xz_array = np.array(target_pivot_xz_list)
+
+
+    labels = ['d', 's', 'theta', 'px']
+    fig, ax = plt.subplots(3,1)
+    for i in range(3):
+        if i < 3:
+            ax[i].plot(t_array, target_pose_array[:, i], 'k', label='target')
+            ax[i].plot(t_array, contact_pose_array[:, i], 'b', label='measured')
+        else:
+            ax[i].plot(t_array, target_pivot_xz_array[:, i-3], 'k', label='target')
+            ax[i].plot(t_array, pivot_xz_array[:, i-3], 'b', label='measured')
+        ax[i].set_ylabel(labels[i])
+        # ax[i].legend()
+
+    # ax[3].plot(t_array, impedance_target_array[:, 0], 'r')
+    # print("hello")
+    # print(impedance_target_array)
+
+
+    print("plotting")
+    start = 0.0
+    stop = 1.0
+    number_of_lines = len(t_list)
+    cm_subsection = np.linspace(start, stop, number_of_lines) 
+    colors = [cm.jet(x) for x in cm_subsection]
+
+    fig2, axs2 = plt.subplots(1, 3)
+    axs2 = pbc.plot_boundaries(axs2, contact_pose_list[0], 
+        measured_wrench_contact_list[0], NMAX)
+
+    for contact_pose, delta_contact_pose, measured_wrench, delta_wrench, color in zip(
+        contact_pose_list, delta_contact_pose_list, 
+        measured_wrench_contact_list, wrench_increment_contact_list, colors):
+
+        axs2 = pbc.plot_projections(axs2, contact_pose, 5 * delta_wrench / RATE, 
+            measured_wrench, NMAX, color, False)
+
+        # axs2 = pbc.plot_cost_function_projection(axs2, contact_pose, 
+        #     delta_contact_pose, measured_wrench, mode, color)
+
+
+    fig3, axs3 = plt.subplots(1, 3)
+    axs3 = pbc.plot_boundaries(axs3, contact_pose_list[0], 
+        measured_wrench_contact_list[0], NMAX)
+
+    axs3[0].plot(measured_wrench_contact_array[:, 1], measured_wrench_contact_array[:, 0])
+    axs3[1].plot(measured_wrench_contact_array[:, 2], measured_wrench_contact_array[:, 0])
+    # ax3[0].plot(measured_wrench_contact_array[:, 2], measured_wrench_contact_array[:, 0])
+
+
+    plt.show()

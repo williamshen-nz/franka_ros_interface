@@ -38,7 +38,7 @@ if __name__ == '__main__':
     #1. initialize node
     rospy.init_node('ee_pose_in_world_from_franka',
         anonymous=True)
-    rate = rospy.Rate(30.)             
+    rate = rospy.Rate(rospy.get_param("/estimator_params/RATE"))             
 
     #2. initialize arm
     arm = ArmInterface()

@@ -24,7 +24,7 @@ def get_hand_orientation_in_base(contact_pose_homog):
     return -np.arctan2(hand_normal_x, -hand_normal_z)
 
 def update_sliding_velocity(x0, z0, contact_pose, contact_vel, 
-    torque_boundary_flag, ee_pos_contact_frame_old, LCONTACT, RATE, axs):
+    torque_boundary_flag, ee_pos_contact_frame_old, LCONTACT, RATE):
 
     contact_pose_stamped = ros_helper.list2pose_stamped(contact_pose)
     contact_pose_homog = ros_helper.matrix_from_pose(contact_pose_stamped)
@@ -65,17 +65,6 @@ def update_sliding_velocity(x0, z0, contact_pose, contact_vel,
 
         # generalized position
         ee_pos_contact_frame = np.array([d, s, tht])
-
-        # p1x, p1z = -d*np.sin(tht), -d*np.cos(tht)
-        # p2x, p2z = p1x - s * np.cos(tht), p1z + s * np.sin(tht)
-        # p3x, p3z = p2x + 0.5 * LCONTACT * e_t2D[0], p2z + 0.5 * LCONTACT * e_t2D[1]
-        # p4x, p4z = p2x - 0.5 * LCONTACT * e_t2D[0], p2z - 0.5 * LCONTACT * e_t2D[1]
-
-        # axs.clear()
-        # axs.plot([0, p1x, p2x, p3x, p4x], 
-        #     [0, p1z, p2z, p3z, p4z], 'k')
-        # axs.scatter([p2x], [p2z], color='r')
-        # axs.scatter([xc], [zc], color='y')    
 
     elif torque_boundary_flag == 0:
         print("Not in contact")
@@ -163,32 +152,11 @@ def update_sliding_velocity(x0, z0, contact_pose, contact_vel,
         ee_vel_contact_frame = (ee_pos_contact_frame - 
             ee_pos_contact_frame_old)/RATE
 
-        # p1x, p1z = -d_old*np.sin(tht), -d_old*np.cos(tht)
-        # p2x, p2z = p1x - s * np.cos(tht), p1z + s * np.sin(tht)
-        # p3x, p3z = p1x - s_contact *  np.cos(tht), p1z + s_contact * np.sin(tht)
-
-        # if torque_boundary_flag == 1:
-        #     multiplier = -1
-        # elif torque_boundary_flag == 2:
-        #     multiplier = 1
-
-        # p4x = p3x + multiplier * 0.5 * LCONTACT * e_t2D[0]
-        # p4z = p3z + multiplier * 0.5 * LCONTACT * e_t2D[1]
-
-        # p5x = p3x + multiplier * LCONTACT * e_t2D[0]
-        # p5z = p3z + multiplier * LCONTACT * e_t2D[1]
-
-        # axs.clear()
-        # axs.plot([0, p1x, p2x, p3x, p4x, p5x], 
-        #     [0, p1z, p2z, p3z, p4z, p5z], 'k')
-        # axs.scatter([p2x, p4x], [p2z, p4z], color='r')
-        # axs.scatter([xcontact, xc], [zcontact, zc], color='y')
-
     else:
         raise RuntimeError("incorrect torque_boundary_flag value")
 
 
-    return ee_vel_contact_frame, ee_pos_contact_frame, tht_hand, axs
+    return ee_vel_contact_frame, ee_pos_contact_frame, tht_hand
         
 def pivot_xyz_callback(data):
     global pivot_xyz
@@ -211,8 +179,8 @@ if __name__ == '__main__':
     arm = ArmInterface()
     rospy.sleep(0.5)
 
-    RATE = 100.
-    LCONTACT = 0.065
+    LCONTACT = rospy.get_param("/obj_params/L_CONTACT_MAX") # in yaml
+    RATE = rospy.get_param("/estimator_params/RATE")
     rate = rospy.Rate(RATE)
 
     # initialize globals
@@ -237,21 +205,19 @@ if __name__ == '__main__':
     # define messages
     position_msg, velocity_msg = Float32MultiArray(), Float32MultiArray()
 
-    # make sure subscribers are receiving commands
-    print("Waiting for pivot estimate to stabilize")
-    while pivot_xyz is None:
-        rospy.sleep(0.1)
+    # # make sure subscribers are receiving commands
+    # print("Waiting for pivot estimate to stabilize")
+    # while pivot_xyz is None:
+    #     rospy.sleep(0.1)
 
-    print("Waiting for torque boundary check")
-    while torque_boundary_boolean is None:
-        pass
+    # print("Waiting for torque boundary check")
+    # while torque_boundary_boolean is None:
+    #     pass
 
-    print("Waiting for torque boundary check")
-    while torque_cone_boundary_flag is None:
-        pass
+    # print("Waiting for torque boundary check")
+    # while torque_cone_boundary_flag is None:
+    #     pass
 
-    # fig, axs = plt.subplots(1,1)
-    axs = None
 
     print("Starting to publish sliding velocity/position")
     while not rospy.is_shutdown():
@@ -272,18 +238,11 @@ if __name__ == '__main__':
             endpoint_velocity_list = franka_helper.franka_velocity2list(
                 endpoint_velocity) 
 
-            # axs.invert_xaxis()
             # update sliding velocity
-            ee_vel_contact_frame, ee_pos_contact_frame, tht_hand, axs = update_sliding_velocity(
+            ee_vel_contact_frame, ee_pos_contact_frame, tht_hand = update_sliding_velocity(
                 pivot_xyz[0], pivot_xyz[2], endpoint_pose_list,
                 endpoint_velocity_list, torque_cone_boundary_flag, 
-                ee_pos_contact_frame_old, LCONTACT, RATE, axs)
-            # axs.axis('equal')
-            # axs.set_xlim([0.1, -0.1])
-            # axs.set_ylim([0.0, 0.2])
-            # plt.pause(0.01)
-
-            # input("Press enter to continue")
+                ee_pos_contact_frame_old, LCONTACT, RATE)
 
             # update messages
             position_msg.data = ee_pos_contact_frame

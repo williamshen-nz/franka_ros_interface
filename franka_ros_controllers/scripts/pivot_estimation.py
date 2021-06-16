@@ -124,8 +124,8 @@ def update_center_of_rotation_estimate_sliding(current_pose_list,
         e_t2D = t2D/np.sqrt(np.sum(t2D ** 2))
 
         # new x position of the pivot
-        TOL = 0.2
-        if np.abs(e_t2D[1]) > TOL:
+        # can't disambiguate sliding at contact versus ground if hand is horizontal
+        if np.abs(e_t2D[1]) > 0.2:  
 
             xp = current_pose_list[0] - d*e_n2D[0] - (
                 e_t2D[0]/e_t2D[1]) * (current_pose_list[2] 
@@ -150,7 +150,9 @@ if __name__ == '__main__':
     arm = ArmInterface()
     rospy.sleep(0.5)
 
-    rate = rospy.Rate(100)
+    RATE = rospy.get_param("/estimator_params/RATE")
+    print(RATE)
+    rate = rospy.Rate(RATE)
 
     endpoint_pose_all = []
     hand_angle_all = []
@@ -186,9 +188,12 @@ if __name__ == '__main__':
     d=None
 
     # hyper parameters
-    Nbatch = 250             # max number of datapoints for estimation
-    update_length = 200       # number of good points before update/publish
-    diff_threshold = 0.005   # threshold for new datapoints
+    NBATCH = rospy.get_param("/estimator_params/NBATCH_PIVOT")             # in yaml
+    print(NBATCH)
+    UPDATE_LENGTH = rospy.get_param("/estimator_params/UPDATE_LENGTH_PIVOT")     # in yaml
+    print(UPDATE_LENGTH)
+    ANG_DIFF_THRESH = rospy.get_param("/estimator_params/ANGLE_DIFF_THRESH_PIVOT")   # in yaml
+    print(ANG_DIFF_THRESH)
 
     # flags
     previous_loop_sliding = False
@@ -255,19 +260,19 @@ if __name__ == '__main__':
 
                 # if measured pose is new, and the measurement is not at wrench cone boundary
                 if np.abs(diff_angle
-                    ) > diff_threshold and torque_boundary_boolean:
+                    ) > ANG_DIFF_THRESH and torque_boundary_boolean:
                     
                     # append to list
                     endpoint_pose_all.append(endpoint_pose_list)
                     hand_angle_all.append(hand_angle)
 
-                    # make list a FIFO buffer of length Nbatch
-                    if len(endpoint_pose_all) > Nbatch:
+                    # make list a FIFO buffer of length NBATCH
+                    if len(endpoint_pose_all) > NBATCH:
                         endpoint_pose_all.pop(0)
                         hand_angle_all.pop(0)
 
                     # and update
-                    if len(endpoint_pose_all) > update_length:
+                    if len(endpoint_pose_all) > UPDATE_LENGTH:
 
                         # update center of rotation estimate
                         x0, z0, d = update_center_of_rotation_estimate(
@@ -283,7 +288,7 @@ if __name__ == '__main__':
 
 
             # only publish after estimate has settled
-            if len(endpoint_pose_all) > update_length:
+            if len(endpoint_pose_all) > UPDATE_LENGTH:
                 update_frame_translation(pivot_xyz, frame_message)
                 update_marker_pose(pivot_pose, marker_message)
                 pivot_xyz_pub.publish(frame_message)

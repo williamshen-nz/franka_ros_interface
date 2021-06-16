@@ -17,10 +17,14 @@ import numpy as np
 ft_wrench_in_ft_sensor_frame = "/netft/netft_data"
 
 # length of the end effect. this should really be placed in another file
-LCONTACT = 0.1
+LCONTACT = rospy.get_param("/obj_params/L_CONTACT_MAX") # in yaml
+print(LCONTACT)
 
 # Minimum required normal force
-NORMAL_FORCE_THRESHOLD = .05
+NORMAL_FORCE_THRESHOLD = rospy.get_param("/estimator_params/NORMAL_FORCE_THRESHOLD_FORCE") # in yaml
+print(NORMAL_FORCE_THRESHOLD)
+TORQUE_BOUNDARY_MARGIN = rospy.get_param("/obj_params/TORQUE_BOUNDARY_MARGIN") # in yaml
+print(TORQUE_BOUNDARY_MARGIN)
 
 def zero_ft_sensor():
     rospy.wait_for_service('/netft/zero', timeout=0.5)
@@ -126,7 +130,8 @@ if __name__ == '__main__':
         torque_boundary_boolean_message = Bool()
 
         if normal_force<-NORMAL_FORCE_THRESHOLD:
-            torque_boundary_boolean=(np.abs(torque)/np.abs(normal_force))<=(.8*.5*LCONTACT)
+            torque_boundary_boolean=(np.abs(torque)/np.abs(normal_force))<=(
+                0.5*TORQUE_BOUNDARY_MARGIN*LCONTACT)
             torque_ratio = (np.abs(torque)/np.abs(normal_force))
         
         torque_boundary_boolean_message.data = torque_boundary_boolean
@@ -140,9 +145,11 @@ if __name__ == '__main__':
             if normal_force>=-NORMAL_FORCE_THRESHOLD:
                 torque_boundary_flag=0
             else:
-                if torque/np.abs(normal_force)>(.8*.5*LCONTACT):
+                if torque/np.abs(normal_force)>(
+                    0.5*TORQUE_BOUNDARY_MARGIN*LCONTACT):
                     torque_boundary_flag=1
-                if torque/np.abs(normal_force)<-(.8*.5*LCONTACT):
+                if torque/np.abs(normal_force)<-(
+                    0.5*TORQUE_BOUNDARY_MARGIN*LCONTACT):
                     torque_boundary_flag=2
 
         torque_boundary_flag_message.data = torque_boundary_flag

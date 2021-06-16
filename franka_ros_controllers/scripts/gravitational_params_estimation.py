@@ -46,7 +46,7 @@ def update_gravity_params(theta_list, moment_list):
 if __name__ == '__main__':
 
     rospy.init_node("gravitational_params_estimator")
-    rate = rospy.Rate(30.)
+    rate = rospy.Rate(rospy.get_param("/estimator_params/RATE"))
 
     # arm
     arm = ArmInterface()
@@ -70,20 +70,19 @@ if __name__ == '__main__':
     gravity_torque_pub = rospy.Publisher('/gravity_torque', Float32, queue_size=10)
     grav_params_vis_pub = rospy.Publisher('/grav_params_vis', WrenchStamped, queue_size=10)
 
-
     # wait
-    print("Waiting for external wrench")
-    while external_wrench is None:
-        pass
+    # print("Waiting for external wrench")
+    # while external_wrench is None:
+    #     pass
 
-    # wait
-    print("Waiting for robot angle ")
-    while robot_angle is None:
-        pass
+    # # wait
+    # print("Waiting for robot angle ")
+    # while robot_angle is None:
+    #     pass
 
-    print("Waiting for torque boundary check")
-    while torque_boundary_boolean is None:
-        pass
+    # print("Waiting for torque boundary check")
+    # while torque_boundary_boolean is None:
+    #     pass
 
     # initialize estimates
     mgl, theta0 = None, None
@@ -93,9 +92,9 @@ if __name__ == '__main__':
     robot_orientation_list = []
 
     # hyper parameters
-    Nbatch = 500                          # max number of datapoints for estimation
-    delta_angle_threshold = np.pi/12      # number of good points before update/publish
-    diff_threshold = 0.001                # threshold for new datapoints
+    NBATCH = rospy.get_param("/estimator_params/NBATCH_GRAV_PARAMS")                            # in yaml
+    DELTA_ANGLE_THRESH = rospy.get_param("/estimator_params/DELTA_ANGLE_THRESH_GRAV")         # in yaml
+    ANGLE_DIFF_THRESH = rospy.get_param("/estimator_params/ANGLE_DIFF_THRESH_GRAV")               # in yaml
 
     # running estimates
     max_angle, min_angle = 0., 0.
@@ -126,20 +125,21 @@ if __name__ == '__main__':
                 robot_orientation_list.append(robot_angle)
 
             # if measured pose is new and the measurement is not at wrench cone boundary
-            if (np.abs(robot_angle - robot_orientation_list[-1]) > diff_threshold) and torque_boundary_boolean:
+            if (np.abs(robot_angle - robot_orientation_list[-1]) > 
+                ANGLE_DIFF_THRESH) and torque_boundary_boolean:
                 
                 # append to list
                 gravitational_torque_list.append(external_wrench_list[-2])
                 robot_orientation_list.append(robot_angle)
 
-                # make list a FIFO buffer of length Nbatch
-                if len(robot_orientation_list) > Nbatch:
-                    print("nbatch long")
+                # make list a FIFO buffer of length NBATCH
+                if len(robot_orientation_list) > NBATCH:
+                    print("NBATCH long")
                     robot_orientation_list.pop(0)
                     gravitational_torque_list.pop(0)
 
                 # and update
-                if (max_angle - min_angle) > delta_angle_threshold:
+                if (max_angle - min_angle) > DELTA_ANGLE_THRESH:
                     mgl, theta0 = update_gravity_params(robot_orientation_list, 
                         gravitational_torque_list)
                     publish_flag = True

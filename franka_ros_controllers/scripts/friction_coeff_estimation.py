@@ -34,7 +34,7 @@ if __name__ == '__main__':
     arm = ArmInterface()
     rospy.sleep(0.5)
 
-    rate = rospy.Rate(100)
+    rate = rospy.Rate(rospy.get_param("/estimator_params/RATE"))
 
     # initialize globals
     end_effector_wrench_in_end_effector_frame, generalized_velocities, \
@@ -48,24 +48,9 @@ if __name__ == '__main__':
     torque_cone_boundary_test_sub = rospy.Subscriber("/torque_cone_boundary_test", 
         Bool,  torque_cone_boundary_test_callback)
 
-
     # setting up publisher
     robot_friction_estimate_pub = rospy.Publisher('/robot_friction_estimate', Float32, 
         queue_size=10)
-
-    # # make sure subscribers are receiving commands
-    # print("Waiting for end effector wrench")
-    # while end_effector_wrench_in_end_effector_frame is None:
-    #     rospy.sleep(0.1)
-
-    # print("Waiting for generalized velocities")
-    # while generalized_velocities is None:
-    #     rospy.sleep(0.1)
-
-    # # make sure subscribers are receiving commands
-    # print("Waiting for torque boundary check")
-    # while torque_boundary_boolean is None:
-    #     rospy.sleep(0.1)
 
     # initialize
     generalized_velocities_list = []
@@ -74,13 +59,12 @@ if __name__ == '__main__':
     friction_estimate_message = Float32()
 
     # hyperparameters
-    sliding_threshold = 0.03
-    NOMINAL_FRICTION_VAL = 0.15
+    SLIDING_THRESH = rospy.get_param("/estimator_params/SLIDING_THRESH_FRICTION_EST") # in yaml
+    NOMINAL_FRICTION_VAL = rospy.get_param("/obj_params/MU_CONTACT_0") # in yaml
 
     # initialize estimate
     friction_estimate = 0.
     num_measurements = 0.
-    update_plot_count = 300
 
     print("starting force collection")
     while not rospy.is_shutdown():
@@ -93,7 +77,8 @@ if __name__ == '__main__':
                 end_effector_wrench_in_end_effector_frame))
 
             # if we are sliding
-            if (generalized_velocities.data[1] > sliding_threshold) and torque_boundary_boolean:
+            if (np.abs(generalized_velocities.data[1]) > SLIDING_THRESH
+                ) and torque_boundary_boolean:
                 
                 # if is new a velocity 
                 if len(generalized_velocities_list)==0 or \
@@ -107,7 +92,7 @@ if __name__ == '__main__':
                     friction_list.append(friction_measurement)
 
                     # update estimate
-                    friction_estimate=(friction_measurement/num_measurements) + (
+                    friction_estimate = (friction_measurement/num_measurements) + (
                         (num_measurements-1.)/num_measurements)*friction_estimate
 
                     # append
