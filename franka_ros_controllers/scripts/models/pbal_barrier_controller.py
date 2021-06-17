@@ -146,7 +146,7 @@ class PbalBarrierController(object):
             const += b2 ** 2
 
         else:
-            raise RuntimeError("Invalid mode: must be -1, 0, or 1")
+            raise RuntimeError("Invalid mode: must be -1, 0, 1, 2, and 3")
 
         P += self.regularization_constant * np.identity(3)
 
