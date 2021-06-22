@@ -1,9 +1,0 @@
-RATE: 100.                           # hz
-NBATCH_PIVOT: 250                    # max number of datapoints for estimation for pivot 
-UPDATE_LENGTH_PIVOT: 200             # number of good points before update/publish for pivot
-ANGLE_DIFF_THRESH_PIVOT: 0.005       # rad(difference in angles for new datapoints for pivot)
-SLIDING_THRESH_FRICTION_EST: 0.03    # m/s (threshold for sliding velocity)
-NBATCH_GRAV_PARAMS: 500              # number of good points before update/publish for grav
-ANGLE_DIFF_THRESH_GRAV: 0.001        # rad (difference in angles for new datapoints for grav)
-DELTA_ANGLE_THRESH_GRAV: 0.25        # rad (minimum travel needed to publish grav params)
-NORMAL_FORCE_THRESHOLD_FORCE: 0.05   # N (min normal force to register as being in contact)

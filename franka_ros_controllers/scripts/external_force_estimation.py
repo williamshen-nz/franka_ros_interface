@@ -5,14 +5,15 @@ import tf
 import tf.transformations as tfm
 import rospy
 import pdb
-
 import ros_helper
 import franka_helper
+import matplotlib.pyplot as plt
+
 from franka_interface import ArmInterface 
 from geometry_msgs.msg import TransformStamped, WrenchStamped, Vector3Stamped
 from std_msgs.msg import Float32MultiArray
 from visualization_msgs.msg import Marker
-import matplotlib.pyplot as plt
+from models.system_params import SystemParams
 
 def get_xy_wrench_world(wrench_list):
     return [wrench_list[0], wrench_list[2], wrench_list[-2]]
@@ -34,7 +35,8 @@ if __name__ == '__main__':
     arm = ArmInterface()
     rospy.sleep(0.5)
 
-    rate = rospy.Rate(rospy.get_param("/estimator_params/RATE"))
+    system_params = SystemParams()
+    rate = rospy.Rate(system_params.estimator_params["RATE"])
 
     # initialize globals
     pivot_xyz, end_effector_wrench_in_base_frame = None, None

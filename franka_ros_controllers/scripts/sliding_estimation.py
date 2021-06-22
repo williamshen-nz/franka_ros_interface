@@ -7,14 +7,15 @@ import rospy
 import pdb
 import copy
 import time
-
 import ros_helper
 import franka_helper
+import matplotlib.pyplot as plt
+
 from franka_interface import ArmInterface 
 from geometry_msgs.msg import TransformStamped
 from std_msgs.msg import Float32MultiArray, Bool, Int32
 from visualization_msgs.msg import Marker
-import matplotlib.pyplot as plt
+from models.system_params import SystemParams
 
 
 def get_hand_orientation_in_base(contact_pose_homog):
@@ -179,8 +180,9 @@ if __name__ == '__main__':
     arm = ArmInterface()
     rospy.sleep(0.5)
 
-    LCONTACT = rospy.get_param("/obj_params/L_CONTACT_MAX") # in yaml
-    RATE = rospy.get_param("/estimator_params/RATE")
+    sys_params = SystemParams()
+    LCONTACT = sys_params.object_params["L_CONTACT_MAX"] # in yaml
+    RATE = sys_params.estimator_params["RATE"]
     rate = rospy.Rate(RATE)
 
     # initialize globals

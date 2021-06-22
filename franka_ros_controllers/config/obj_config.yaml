@@ -1,4 +1,0 @@
-L_CONTACT_MAX: 0.1             # m (length of robot/object contact)
-MU_GROUND_0: 1.0               # friction between obj/ground
-MU_CONTACT_0: 0.1              # friciton between robot/obj
-TORQUE_BOUNDARY_MARGIN: 0.8    # multiplies L_CONTACT to set conservative margin for torque boundary

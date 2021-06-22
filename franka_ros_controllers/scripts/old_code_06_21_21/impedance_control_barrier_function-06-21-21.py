@@ -18,8 +18,7 @@ from std_msgs.msg import Float32MultiArray, Float32, Bool
 from franka_ros_controllers.msg import PbalBarrierFuncCommand
 from franka_tools import CollisionBehaviourInterface
 
-from models.system_params import SystemParams
-from models.modular_barrier_controller import ModularBarrierController
+from models.pbal_barrier_controller import PbalBarrierController
 
 def initialize_frame():
     frame_message = TransformStamped()
@@ -69,29 +68,6 @@ def get_robot_world_xyz_theta(arm):
 
     return xyz_theta
 
-def set_object_params(pivot_xyz, mgl, theta0, robot_friction_coeff,
-    initial_object_params):
-
-    # build build in object parameters
-    obj_params = dict()
-    if pivot_xyz is None:
-        obj_params['pivot'] = None
-    else:
-        obj_params['pivot'] = np.array([pivot_xyz[0], pivot_xyz[2]])
-
-    obj_params['mgl'] = mgl
-    obj_params['theta0'] = theta0
-    
-    if robot_friction_coeff is not None:
-        obj_params['mu_contact'] = robot_friction_coeff
-    else: 
-        obj_params['mu_contact'] = initial_object_params['MU_CONTACT_0']
-
-    obj_params['mu_ground'] = initial_object_params['MU_GROUND_0']
-    obj_params['l_contact'] = initial_object_params["L_CONTACT_MAX"]
-
-    return obj_params
-
 def pivot_xyz_callback(data):
     global pivot_xyz
     pivot_xyz =  [data.transform.translation.x,
@@ -132,30 +108,28 @@ def barrier_func_control_command_callback(data):
 
 if __name__ == '__main__':
 
-    # load params
-    sys_params = SystemParams()
-    controller_params = sys_params.controller_params
-    initial_object_params = sys_params.object_params
-
     rospy.init_node("impedance_control_test")
-    RATE = controller_params["RATE"]
+    RATE = rospy.get_param("/controller_params/RATE")
     rate = rospy.Rate(RATE) # in yaml
+
+    # object constants
+    LCONTACT = rospy.get_param("/obj_params/L_CONTACT_MAX") # in yaml
+    MU_GROUND = rospy.get_param("/obj_params/MU_GROUND_0")     # in yaml
+    MU_CONTACT = rospy.get_param("/obj_params/MU_CONTACT_0")    # in yaml
 
     # arm interface
     arm = ArmInterface()
     rospy.sleep(0.5)
 
-    # setting collision parameters
     print("Setting collision behaviour")
     collision = CollisionBehaviourInterface()
     rospy.sleep(0.5)
-    torque_upper = controller_params["TORQUE_UPPER"] 
-    force_upper = controller_params["FORCE_UPPER"]
+    torque_upper = rospy.get_param("/controller_params/TORQUE_UPPER") 
+    force_upper = rospy.get_param("/controller_params/FORCE_UPPER") 
     collision.set_ft_contact_collision_behaviour(torque_upper=torque_upper, 
         force_upper=force_upper)
     rospy.sleep(1.0)
 
-    # globals
     pivot_xyz, generalized_positions, end_effector_wrench, object_apriltag_pose \
         , robot_friction_coeff, theta0, mgl, command_msg_queue\
         = None, None, None, None, None, None, None, []
@@ -199,24 +173,45 @@ if __name__ == '__main__':
     # set up transform broadcaster
     target_frame_broadcaster = tf2_ros.TransformBroadcaster()
 
-    # set object params
-    obj_params = set_object_params(pivot_xyz=pivot_xyz, mgl=mgl, theta0=theta0, 
-        robot_friction_coeff = robot_friction_coeff, 
-        initial_object_params = initial_object_params)
+    # build barrier function model
+    obj_params = dict()
+    if pivot_xyz is None:
+        obj_params['pivot'] = None
+    else:
+        obj_params['pivot'] = np.array([pivot_xyz[0], pivot_xyz[2]])
+
+    obj_params['mgl'] = mgl
+    obj_params['theta0'] = theta0
+    
+    if robot_friction_coeff is not None:
+        obj_params['mu_contact'] = robot_friction_coeff
+    else: 
+        obj_params['mu_contact'] = MU_CONTACT
+
+    obj_params['mu_ground'] = MU_GROUND
+    obj_params['l_contact'] = LCONTACT
 
     # impedance parameters
-    IMPEDANCE_STIFFNESS_LIST = controller_params["IMPEDANCE_STIFFNESS_LIST"]
-    INTEGRAL_MULTIPLIER = controller_params["INTEGRAL_MULTIPLIER"]
+    IMPEDANCE_STIFFNESS_LIST = rospy.get_param("/controller_params/IMPEDANCE_STIFFNESS_LIST") 
+    NMAX = rospy.get_param("/controller_params/NMAX")
+    INTEGRAL_MULTIPLIER = rospy.get_param("/controller_params/INTEGRAL_MULTIPLIER")
 
-    # controller parameters
-    param_dict = copy.deepcopy(controller_params)
+    param_dict = dict()
     param_dict['obj_params'] = obj_params
-    print(param_dict['theta_scale_pivot'])
-    param_dict['torque_margin_robot_pivot'] = param_dict[
-        'torque_margin_robot_pivot_factor'] * param_dict['Nmax']
-    
+    param_dict['K_theta'] = rospy.get_param("/controller_params/K_THETA") 
+    param_dict['K_s'] = rospy.get_param("/controller_params/K_S") 
+    param_dict['K_x_pivot'] = rospy.get_param("/controller_params/K_X") 
+    param_dict['trust_region'] = np.array(rospy.get_param("/controller_params/TRUST_REGION_LIST")) 
+    param_dict['concavity_rotating'] = rospy.get_param("/controller_params/CONCAVITY_THETA") 
+    param_dict['concavity_sliding'] = rospy.get_param("/controller_params/CONCAVITY_S") 
+    param_dict['concavity_x_sliding'] = rospy.get_param("/controller_params/CONCAVITY_X") 
+    param_dict['regularization_constant'] = rospy.get_param("/controller_params/REGULARIZATION_CONST") 
+    param_dict['torque_margin'] = rospy.get_param("/controller_params/TORQUE_MARGIN_FACTOR") * NMAX
+    param_dict['s_scale'] = rospy.get_param("/controller_params/S_SCALE")
+    param_dict['x_piv_scale'] = rospy.get_param("/controller_params/X_SCALE")
+
     # create inverse model
-    pbc = ModularBarrierController(param_dict)
+    pbc = PbalBarrierController(param_dict)
 
     # initial impedance target
     impedance_target_pose = arm.endpoint_pose()
@@ -256,7 +251,7 @@ if __name__ == '__main__':
             if robot_friction_coeff is not None:
                 pbc.mu_contact = robot_friction_coeff
             else: 
-                pbc.mu_contact = initial_object_params["MU_CONTACT_0"]
+                pbc.mu_contact = MU_CONTACT
 
             # unpack current message
             if command_msg_queue:
@@ -368,26 +363,13 @@ if __name__ == '__main__':
                 measured_contact_wench_6D[1],
                 measured_contact_wench_6D[-1]])
 
-            # print(delta_contact_pose)
-
-            # update controller
-            pbc.update_controller(mode=mode, 
-                theta_hand=contact_pose[2], 
-                contact_wrench=measured_contact_wrench, 
-                l_hand=contact_pose[0], 
-                s_hand=contact_pose[1], 
-                err_theta_pivot=delta_contact_pose[2], 
-                err_s_pivot=delta_contact_pose[1], 
-                err_x_pivot=delta_x_pivot)
-
             # compute wrench increment          
             try:
-                # wrench_increment_contact = pbc.solve_qp(measured_contact_wrench, \
-                #     contact_pose, delta_contact_pose, delta_x_pivot, mode, NMAX)
-                wrench_increment_contact = pbc.solve_for_delta_wrench()
-            except Exception as e:                
+                wrench_increment_contact = pbc.solve_qp(measured_contact_wrench, \
+                    contact_pose, delta_contact_pose, delta_x_pivot, mode, NMAX)           
+            except Exception as e:
                 print("couldn't find solution")
-                wrench_increment_contact = np.zeros(3)
+                break
 
             # convert wrench to robot frame
             contact2robot = pbc.pbal_helper.contact2robot(contact_pose)

@@ -13,7 +13,7 @@ def gravity_torque_callback(data):
 if __name__ == '__main__':
 
     rospy.init_node("barrier_func_commands")
-    rate = rospy.Rate(0.3) # in yaml
+    rate = rospy.Rate(0.2) # in yaml
     rospy.sleep(1.0)
 
 
@@ -36,7 +36,7 @@ if __name__ == '__main__':
 
     mgl = None
     print("starting theta dither")
-    while mgl is None:
+    while (mgl is None) and (not rospy.is_shutdown()):
             
             control_command_pub.publish(command_msg)
             command_msg.theta *= -1

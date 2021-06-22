@@ -2,29 +2,24 @@
 
 import rospy
 import tf
-
-from geometry_msgs.msg import WrenchStamped
 import netft_rdt_driver.srv as srv
+import numpy as np
+
 from ros_helper import (unit_pose, list2pose_stamped, pose_stamped2list,
                                convert_reference_frame, quat2list, 
                                lookupTransform, wrenchstamped_2FT, rotate_wrench, 
                                wrench_reference_point_change)
 from std_msgs.msg import Bool, Int32
-
-import numpy as np
+from geometry_msgs.msg import WrenchStamped
+from models.system_params import SystemParams
 
 # ft sensor topic
 ft_wrench_in_ft_sensor_frame = "/netft/netft_data"
 
-# length of the end effect. this should really be placed in another file
-LCONTACT = rospy.get_param("/obj_params/L_CONTACT_MAX") # in yaml
-print(LCONTACT)
-
-# Minimum required normal force
-NORMAL_FORCE_THRESHOLD = rospy.get_param("/estimator_params/NORMAL_FORCE_THRESHOLD_FORCE") # in yaml
-print(NORMAL_FORCE_THRESHOLD)
-TORQUE_BOUNDARY_MARGIN = rospy.get_param("/obj_params/TORQUE_BOUNDARY_MARGIN") # in yaml
-print(TORQUE_BOUNDARY_MARGIN)
+sys_params = SystemParams()
+LCONTACT = sys_params.object_params["L_CONTACT_MAX"]                                    # length of the end effector 
+NORMAL_FORCE_THRESHOLD = sys_params.estimator_params["NORMAL_FORCE_THRESHOLD_FORCE"] # Minimum required normal force
+TORQUE_BOUNDARY_MARGIN = sys_params.object_params["TORQUE_BOUNDARY_MARGIN"]             # in yaml
 
 def zero_ft_sensor():
     rospy.wait_for_service('/netft/zero', timeout=0.5)

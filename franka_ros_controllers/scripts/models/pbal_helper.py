@@ -46,3 +46,29 @@ class PbalHelper(object):
                             robot_pose - np.append(self.pivot, 0.))
 
         return robot_pose
+
+    def update_object_parameters(self, 
+        pivot = None, 
+        mgl = None, 
+        theta0 = None, 
+        mu_contact = None, 
+        mu_ground = None, 
+        l_contact = None):
+
+        if pivot is not None:
+            self.pivot = pivot
+
+        if mgl is not None:
+            self.mgl = mgl
+
+        if theta0 is not None:
+            self.theta0 = theta0
+
+        if mu_contact is not None:
+            self.mu_contact = mu_contact
+
+        if mu_ground is not None:
+            self.mu_ground = mu_ground
+
+        if self.l_contact is not None:
+            self.l_contact = self.l_contact

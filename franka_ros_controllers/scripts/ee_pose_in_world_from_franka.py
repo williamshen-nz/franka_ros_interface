@@ -6,6 +6,7 @@ import pdb
 
 from geometry_msgs.msg import PoseStamped
 from franka_interface import ArmInterface 
+from models.system_params import SystemParams
 from ros_helper import list2pose_stamped, convert_reference_frame, unit_pose
 
 def franka_pose2list(arm_pose):
@@ -38,7 +39,8 @@ if __name__ == '__main__':
     #1. initialize node
     rospy.init_node('ee_pose_in_world_from_franka',
         anonymous=True)
-    rate = rospy.Rate(rospy.get_param("/estimator_params/RATE"))             
+    sys_params = SystemParams()
+    rate = rospy.Rate(sys_params.estimator_params["RATE"])             
 
     #2. initialize arm
     arm = ArmInterface()

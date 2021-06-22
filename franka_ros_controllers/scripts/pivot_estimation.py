@@ -15,6 +15,8 @@ from franka_interface import ArmInterface
 from geometry_msgs.msg import TransformStamped
 from visualization_msgs.msg import Marker
 from std_msgs.msg import Bool
+from models.system_params import SystemParams
+
 
 def initialize_marker():
     marker_message = Marker()
@@ -150,8 +152,8 @@ if __name__ == '__main__':
     arm = ArmInterface()
     rospy.sleep(0.5)
 
-    RATE = rospy.get_param("/estimator_params/RATE")
-    print(RATE)
+    sys_params = SystemParams()
+    RATE = sys_params.estimator_params["RATE"]
     rate = rospy.Rate(RATE)
 
     endpoint_pose_all = []
@@ -188,12 +190,9 @@ if __name__ == '__main__':
     d=None
 
     # hyper parameters
-    NBATCH = rospy.get_param("/estimator_params/NBATCH_PIVOT")             # in yaml
-    print(NBATCH)
-    UPDATE_LENGTH = rospy.get_param("/estimator_params/UPDATE_LENGTH_PIVOT")     # in yaml
-    print(UPDATE_LENGTH)
-    ANG_DIFF_THRESH = rospy.get_param("/estimator_params/ANGLE_DIFF_THRESH_PIVOT")   # in yaml
-    print(ANG_DIFF_THRESH)
+    NBATCH = sys_params.estimator_params["NBATCH_PIVOT"]             # in yaml
+    UPDATE_LENGTH = sys_params.estimator_params["UPDATE_LENGTH_PIVOT"]     # in yaml
+    ANG_DIFF_THRESH = sys_params.estimator_params["ANGLE_DIFF_THRESH_PIVOT"]   # in yaml
 
     # flags
     previous_loop_sliding = False

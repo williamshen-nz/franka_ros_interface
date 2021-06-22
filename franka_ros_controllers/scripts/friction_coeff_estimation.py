@@ -10,6 +10,7 @@ import ros_helper
 from franka_interface import ArmInterface 
 from geometry_msgs.msg import WrenchStamped
 from std_msgs.msg import Float32MultiArray, Float32, Bool
+from models.system_params import SystemParams
 import matplotlib.pyplot as plt
 
 def generalized_velocities_callback(data):
@@ -34,7 +35,9 @@ if __name__ == '__main__':
     arm = ArmInterface()
     rospy.sleep(0.5)
 
-    rate = rospy.Rate(rospy.get_param("/estimator_params/RATE"))
+
+    sys_params = SystemParams()
+    rate = rospy.Rate(sys_params.estimator_params["RATE"])
 
     # initialize globals
     end_effector_wrench_in_end_effector_frame, generalized_velocities, \
@@ -59,8 +62,8 @@ if __name__ == '__main__':
     friction_estimate_message = Float32()
 
     # hyperparameters
-    SLIDING_THRESH = rospy.get_param("/estimator_params/SLIDING_THRESH_FRICTION_EST") # in yaml
-    NOMINAL_FRICTION_VAL = rospy.get_param("/obj_params/MU_CONTACT_0") # in yaml
+    SLIDING_THRESH = sys_params.estimator_params["SLIDING_THRESH_FRICTION_EST"] # in yaml
+    NOMINAL_FRICTION_VAL = sys_params.object_params["MU_CONTACT_0"]    # in yaml
 
     # initialize estimate
     friction_estimate = 0.

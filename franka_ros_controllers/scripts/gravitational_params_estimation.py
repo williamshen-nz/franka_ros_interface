@@ -6,11 +6,13 @@ import tf.transformations as tfm
 import rospy
 import pdb
 import matplotlib.pyplot as plt
-
 import ros_helper, franka_helper
+
 from franka_interface import ArmInterface 
 from geometry_msgs.msg import WrenchStamped
 from std_msgs.msg import Float32MultiArray, Float32, Bool
+from models.system_params import SystemParams
+
 
 
 def external_wrench_callback(data):
@@ -46,7 +48,8 @@ def update_gravity_params(theta_list, moment_list):
 if __name__ == '__main__':
 
     rospy.init_node("gravitational_params_estimator")
-    rate = rospy.Rate(rospy.get_param("/estimator_params/RATE"))
+    sys_params = SystemParams()
+    rate = rospy.Rate(sys_params.estimator_params["RATE"])
 
     # arm
     arm = ArmInterface()
@@ -70,20 +73,6 @@ if __name__ == '__main__':
     gravity_torque_pub = rospy.Publisher('/gravity_torque', Float32, queue_size=10)
     grav_params_vis_pub = rospy.Publisher('/grav_params_vis', WrenchStamped, queue_size=10)
 
-    # wait
-    # print("Waiting for external wrench")
-    # while external_wrench is None:
-    #     pass
-
-    # # wait
-    # print("Waiting for robot angle ")
-    # while robot_angle is None:
-    #     pass
-
-    # print("Waiting for torque boundary check")
-    # while torque_boundary_boolean is None:
-    #     pass
-
     # initialize estimates
     mgl, theta0 = None, None
 
@@ -92,9 +81,9 @@ if __name__ == '__main__':
     robot_orientation_list = []
 
     # hyper parameters
-    NBATCH = rospy.get_param("/estimator_params/NBATCH_GRAV_PARAMS")                            # in yaml
-    DELTA_ANGLE_THRESH = rospy.get_param("/estimator_params/DELTA_ANGLE_THRESH_GRAV")         # in yaml
-    ANGLE_DIFF_THRESH = rospy.get_param("/estimator_params/ANGLE_DIFF_THRESH_GRAV")               # in yaml
+    NBATCH = sys_params.estimator_params["NBATCH_GRAV_PARAMS"]                            # in yaml
+    DELTA_ANGLE_THRESH = sys_params.estimator_params["DELTA_ANGLE_THRESH_GRAV"]           # in yaml
+    ANGLE_DIFF_THRESH = sys_params.estimator_params["ANGLE_DIFF_THRESH_GRAV"]             # in yaml
 
     # running estimates
     max_angle, min_angle = 0., 0.

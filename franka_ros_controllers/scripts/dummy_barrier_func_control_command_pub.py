@@ -17,15 +17,15 @@ if __name__ == '__main__':
     command_msg = PbalBarrierFuncCommand()
 
     command_msg.command_flag = 0
-    command_msg.mode = -1
+    command_msg.mode = 2
 
-    command_msg.theta = 0
+    command_msg.theta = -np.pi/6 - np.pi/20
     command_msg.x = 0.5
-    command_msg.s = 0.0
+    command_msg.s = -0.01
 
-    command_msg.delta_theta = np.pi/20
+    command_msg.delta_theta = 0.0
     command_msg.delta_x = -0.05
-    command_msg.delta_s = -0.01
+    command_msg.delta_s = 0.01
 
     control_command_pub = rospy.Publisher(
         '/barrier_func_control_command', 
@@ -34,19 +34,13 @@ if __name__ == '__main__':
 
 
     published = False
-    while not published:
+    while (not published) and (not rospy.is_shutdown()):
         
         print(control_command_pub.get_num_connections())
         if control_command_pub.get_num_connections() == 1:
         
             control_command_pub.publish(command_msg)
             published = True
-    
 
 
         
-
-
-    # terminate rosbags
-    # ros_helper.terminate_rosbag()
-
