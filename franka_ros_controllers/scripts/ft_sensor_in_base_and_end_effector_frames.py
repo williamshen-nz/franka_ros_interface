@@ -37,6 +37,7 @@ if __name__ == '__main__':
     rospy.init_node('ft_sensor_in_base_frame', anonymous=True)
     rate = rospy.Rate(100.)
 
+
     # Make listener and get vicon to workobj rotation
     listener = tf.TransformListener()
 
@@ -67,7 +68,14 @@ if __name__ == '__main__':
     # wait for ft data
     while ft_wrench_in_ft_sensor is None:
         pass
+
+    # # panda hand pose in base frame WHEN TARING
+    # (panda_hand_in_base_trans0, panda_hand_in_base_rot0) = \
+    #     lookupTransform('/panda_hand', 'base', listener)
+    # panda_hand_in_base_pose0 = list2pose_stamped(panda_hand_in_base_trans0 
+    #     + panda_hand_in_base_rot0, frame_id="base")
     
+
     # zero sensor
     zero_ft_sensor()
     print("Zeroing sensor")

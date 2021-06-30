@@ -1,4 +1,5 @@
 import copy
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -16,50 +17,77 @@ class ModularBarrierController(object):
 
         # create pbal kinematics helper
         self.pbal_helper = PbalHelper(param_dict = param_dict['obj_params'])
-
-        # set objective function parameters
-        self.set_objective_function_paramater_values(param_dict = param_dict)
-
-        # set constraint function parameters
-        self.set_constraint_function_parameter_values(param_dict = param_dict)
-
-        # set maximum normal force robot can apply
-        self.Nmax = param_dict['Nmax']
+        self.param_dict = param_dict
 
         # mode cost and constraint list
         self.mode_cost, self.mode_constraint = None, None
 
 
     def solve_for_delta_wrench(self):
+        P, q, proj_vec_list, error_list = \
+            self.build_quadratic_program_cost()
+        Aiq, biq, slacks = self.build_quadratic_program_constraints()
+        delta_wrench =  self.solve_quadratic_program(P, q, Aiq, slacks)
+        delta_wrench_unconstrained = np.linalg.solve(2*P, -q) 
+        debug_str = self.build_debug_string(delta_wrench, delta_wrench_unconstrained, 
+            proj_vec_list, error_list, Aiq, biq, slacks)
+        return delta_wrench, debug_str
 
-        self.update_mode_cost_and_constraints_list()
-        P, q = self.build_quadratic_program_cost()
-        Aiq, biq = self.build_quadratic_program_constraints()
-        return self.solve_quadratic_program(P, q, Aiq, biq)
+
+    def build_debug_string(self, delta_wrench, delta_wrench_unconstrained,
+        proj_vec_list, error_list, Aiq, biq, slacks):
+
+        debug_dict = {
+            "mode" : self.mode,
+            "delta_wrench" : delta_wrench.tolist(),
+            "delta_wrench_unconstrained" : delta_wrench_unconstrained.tolist(),
+            "proj_vec_list" : [proj_veci.tolist() for proj_veci in proj_vec_list],
+            "error_list": error_list,
+            "constraint_normals": Aiq.tolist(),
+            "constraint_offsets" : biq.tolist(),
+            "slacks" : slacks.tolist(),
+            "measured_wrench" : self.contact_wrench.tolist()
+        }
+
+        debug_str = json.dumps(debug_dict)
+        return debug_str
+
 
     def build_quadratic_program_cost(self):
 
         P,q = np.zeros([3,3]), np.zeros(3)
+        proj_vec_list, error_list = [], []
         for cost in self.mode_cost:
-            Pi, qi = cost()
+            Pi, qi, proj_veci, errori = cost()
             P += Pi
             q += qi
+            proj_vec_list.append(proj_veci)
+            error_list.append(errori)
 
-        return P, q
+        return P, q, proj_vec_list, error_list
 
     def build_quadratic_program_constraints(self):
 
-        Aiq, biq, trust_region, slacks = [], [], [], []
+        Aiq, biq, trust_region, slacks, slack_product = [], [], [], [], []
 
         for constraint in self.mode_constraint:
             aiqi, biqi, tri = constraint()
             Aiq.append(aiqi)
             biq.append(biqi)
             trust_region.append(tri)
-            slacks.append(np.dot(aiqi, self.contact_wrench) - biqi)
+            slacki = np.dot(aiqi, self.contact_wrench) - biqi
 
-        return np.array(Aiq), -np.array(trust_region) * np.array(
-            slacks)
+            if slacki<0:
+                slack_producti = -tri[0] * slacki
+            else:
+                slack_producti = -tri[1] * slacki
+
+
+            slacks.append(slacki)
+            slack_product.append(slack_producti)
+
+        return np.array(Aiq), np.array(biq
+            ), np.array(slack_product)
 
     def solve_quadratic_program(self, P, q, Aiq, biq):
         
@@ -72,126 +100,23 @@ class ModularBarrierController(object):
         result = solvers.qp(P_cvx, q_cvx, Aiq_cvx, biq_cvx)
         return np.squeeze(np.array(result['x']))
 
-    def update_mode_cost_and_constraints_list(self):
-
-        if self.mode == -1:  # line/line stick and point/line stick
-            
-            self.mode_cost = [
-                self.theta_error_pivot_cost,
-                self.wrench_regularization_robot_pivot_cost,
-                self.normal_force_robot_pivot_cost
-            ]
-
-            self.mode_constraint = [
-                self.friction_right_robot_pivot_constraint,
-                self.friction_left_robot_pivot_constraint,
-                self.torque_right_robot_pivot_constraint,
-                self.torque_left_robot_pivot_constraint,
-                self.normal_force_max_robot_pivot_constraint,
-                self.friction_right_external_pivot_constraint,
-                self.friction_left_external_pivot_constraint
-            ]
-
-        if self.mode == 0:   # line/line slide +  and point/line stick
-
-            self.mode_cost = [
-                self.theta_error_pivot_cost,
-                self.slide_right_robot_pivot_cost,
-                self.wrench_regularization_robot_pivot_cost
-            ]
-
-            self.mode_constraint = [
-                self.friction_left_robot_pivot_constraint,
-                self.torque_right_robot_pivot_constraint,
-                self.torque_left_robot_pivot_constraint,
-                self.normal_force_max_robot_pivot_constraint,
-                self.friction_right_external_pivot_constraint,
-                self.friction_left_external_pivot_constraint
-            ]
-         
-
-        if self.mode == 1:   # line/line slide -  and point/line stick
-
-            self.mode_cost = [
-                self.theta_error_pivot_cost,
-                self.slide_left_robot_pivot_cost,
-                self.wrench_regularization_robot_pivot_cost
-            ]
-
-            self.mode_constraint = [
-                self.friction_right_robot_pivot_constraint,
-                self.torque_right_robot_pivot_constraint,
-                self.torque_left_robot_pivot_constraint,
-                self.normal_force_max_robot_pivot_constraint,
-                self.friction_right_external_pivot_constraint,
-                self.friction_left_external_pivot_constraint
-            ]
-
- 
-        if self.mode == 2:   # line/line stick  and point/line slide +
-
-            self.mode_cost = [
-                self.theta_error_pivot_cost,
-                self.slide_left_external_pivot_cost,
-                self.wrench_regularization_robot_pivot_cost
-            ]
-
-            self.mode_constraint = [
-                self.friction_right_robot_pivot_constraint,
-                self.friction_left_robot_pivot_constraint,
-                self.torque_right_robot_pivot_constraint,
-                self.torque_left_robot_pivot_constraint,
-                self.normal_force_max_robot_pivot_constraint,
-                self.friction_right_external_pivot_constraint,
-                self.normal_force_min_external_pivot_constraint
-            ]
-
-      
-        if self.mode == 3:   # line/line stick  and point/line slide -
-
-            self.mode_cost = [
-                self.theta_error_pivot_cost,
-                self.slide_right_external_pivot_cost,
-                self.wrench_regularization_robot_pivot_cost
-            ]
-
-            self.mode_constraint = [
-                self.friction_right_robot_pivot_constraint,
-                self.friction_left_robot_pivot_constraint,
-                self.torque_right_robot_pivot_constraint,
-                self.torque_left_robot_pivot_constraint,
-                self.normal_force_max_robot_pivot_constraint,
-                self.friction_left_external_pivot_constraint,
-                self.normal_force_min_external_pivot_constraint
-            ]
-
-        if self.mode == 4:   # free move
-            pass
-
-    def update_controller(self, mode, theta_hand, contact_wrench,
+    def update_controller(self, mode, theta_hand, contact_wrench, err_dict,
     	l_hand = None,
-    	s_hand = None,
-    	err_theta_pivot = None,     	
-    	err_s_pivot = None,
-    	err_x_pivot = None,
-    	err_theta_free = None,
-    	err_xhand_free = None,
-    	err_zhand_free = None):
+    	s_hand = None):
 
-    	# reset state errors
-    	self.reset_state_errors()
+    	self.err_dict=err_dict
 
     	# update pose variables
     	self.theta_hand, self.l_hand, self.s_hand = theta_hand, l_hand, s_hand
 
     	# update_mode
-        if mode == 0 and err_s_pivot < 0:
+        if mode == 0 and err_dict["err_s"] < 0:
             mode = -1
-        if mode == 1 and err_s_pivot > 0:
+        if mode == 1 and err_dict["err_s"] > 0:
             mode = -1
-        if mode == 2 and err_x_pivot < 0:
+        if mode == 2 and err_dict["err_x_pivot"] < 0:
             mode = -1
-        if mode == 3 and err_x_pivot > 0:
+        if mode == 3 and err_dict["err_x_pivot"] > 0:
             mode = -1
         
     	self.mode = mode
@@ -199,243 +124,376 @@ class ModularBarrierController(object):
     	# update contact wrench
     	self.contact_wrench = contact_wrench
 
+        self.R2C = self.pbal_helper.contact2robot(np.array([
+            self.l_hand, self.s_hand, self.theta_hand]))
 
-        if mode == -1:  # line/line stick and point/line stick
-            self.err_theta_pivot = (2./np.pi) * np.arctan(
-                err_theta_pivot/self.theta_scale_pivot)
-            self.err_N_pivot = (2./np.pi) * np.arctan(
-                (0.5 * self.Nmax - self.contact_wrench[0])/self.N_scale_pivot)
+        if self.mode == -1:  # line/line stick and point/line stick
+            self.current_params=self.param_dict['pivot_params']
 
-        if mode == 0:	# line/line slide +  and point/line stick
-    		self.err_theta_pivot = (2./np.pi) * np.arctan(
-    			err_theta_pivot/self.theta_scale_pivot)
-    		self.err_s_pivot = (2./np.pi) * np.arctan(
-    			err_s_pivot/self.s_scale_pivot)
-    		self.err_N_pivot = (2./np.pi) * np.arctan(
-                (0.5 * self.Nmax - self.contact_wrench[0])/self.N_scale_pivot)
+            self.mode_cost = [
+                self.theta_cost,
+                self.wrench_regularization_cost,
+                self.normal_force_cost
+            ]
 
-    	if mode == 1:	# line/line slide -  and point/line stick
-    		self.err_theta_pivot = (2./np.pi) * np.arctan(
-    			err_theta_pivot/self.theta_scale_pivot)
-    		self.err_s_pivot = (2./np.pi) * np.arctan(
-    			err_s_pivot/self.s_scale_pivot)
-    		self.err_N_pivot = (2./np.pi) * np.arctan(
-                (0.5 * self.Nmax - self.contact_wrench[0])/self.N_scale_pivot)
+            self.mode_constraint = [
+                self.friction_right_contact_constraint,
+                self.friction_left_contact_constraint,
+                self.torque_right_contact_constraint,
+                self.torque_left_contact_constraint,
+                self.normal_force_max_contact_constraint,
+                self.friction_right_external_constraint,
+                self.friction_left_external_constraint
+            ]
 
-        if mode == 2: 	# line/line stick  and point/line slide +
-            self.err_theta_pivot = (2./np.pi) * np.arctan(
-                err_theta_pivot/self.theta_scale_pivot)
-            self.err_x_pivot = (2./np.pi) * np.arctan(
-                err_x_pivot/self.x_scale_pivot)
-            self.err_N_pivot = (2./np.pi) * np.arctan(
-                (0.5 * self.Nmax - self.contact_wrench[0])/self.N_scale_pivot)
+        if self.mode == 0:   # line/line slide +  and point/line stick
+            self.current_params=self.param_dict['pivot_params']
 
-        if mode == 3:	# line/line stick  and point/line slide -
-            self.err_theta_pivot = (2./np.pi) * np.arctan(
-                err_theta_pivot/self.theta_scale_pivot)
-            self.err_x_pivot = (2./np.pi) * np.arctan(
-                err_x_pivot/self.x_scale_pivot)
-            self.err_N_pivot = (2./np.pi) * np.arctan(
-                (0.5 * self.Nmax - self.contact_wrench[0])/self.N_scale_pivot)
+            self.mode_cost = [
+                self.theta_cost,
+                self.slide_right_robot_cost,
+                self.wrench_regularization_cost
+            ]
 
-    	if mode == 4:	# free move
-    		self.err_theta_free = (2./np.pi) * np.arctan(
-    			err_theta_free/self.theta_scale_free)
-    		self.err_xhand_free = (2./np.pi) * np.arctan(
-    			err_xhand_free/self.xhand_scale_free)
-    		self.err_zhand_free = (2./np.pi) * np.arctan(
-    			err_zhand_free/self.zhand_scale_free)      
+            self.mode_constraint = [
+                self.friction_left_contact_constraint,
+                self.torque_right_contact_constraint,
+                self.torque_left_contact_constraint,
+                self.normal_force_max_contact_constraint,
+                self.friction_right_external_constraint,
+                self.friction_left_external_constraint
+            ]
+         
 
-    def friction_right_robot_pivot_constraint(self):
+        if self.mode == 1:   # line/line slide -  and point/line stick
+            self.current_params=self.param_dict['pivot_params']
+
+            self.mode_cost = [
+                self.theta_cost,
+                self.slide_left_robot_cost,
+                self.wrench_regularization_cost
+            ]
+
+            self.mode_constraint = [
+                self.friction_right_contact_constraint,
+                self.torque_right_contact_constraint,
+                self.torque_left_contact_constraint,
+                self.normal_force_max_contact_constraint,
+                self.friction_right_external_constraint,
+                self.friction_left_external_constraint
+            ]
+
+ 
+        if self.mode == 2:   # line/line stick  and point/line slide +
+            self.current_params=self.param_dict['pivot_params']
+
+            self.mode_cost = [
+                self.theta_cost,
+                self.slide_left_external_cost,
+                self.wrench_regularization_cost
+            ]
+
+            self.mode_constraint = [
+                self.friction_right_contact_constraint,
+                self.friction_left_contact_constraint,
+                self.torque_right_contact_constraint,
+                self.torque_left_contact_constraint,
+                self.normal_force_max_contact_constraint,
+                self.friction_right_external_constraint,
+                self.normal_force_min_external_constraint
+            ]
+
+      
+        if self.mode == 3:   # line/line stick  and point/line slide -
+            self.current_params=self.param_dict['pivot_params']
+
+            self.mode_cost = [
+                self.theta_cost,
+                self.slide_right_external_cost,
+                self.wrench_regularization_cost
+            ]
+
+            self.mode_constraint = [
+                self.friction_right_contact_constraint,
+                self.friction_left_contact_constraint,
+                self.torque_right_contact_constraint,
+                self.torque_left_contact_constraint,
+                self.normal_force_max_contact_constraint,
+                self.friction_left_external_constraint,
+                self.normal_force_min_external_constraint
+            ]
+
+        if self.mode == 4:   # guarded move
+            self.current_params=self.param_dict['guarded_move_params']
+
+            self.mode_cost = [
+                self.xhand_cost,
+                self.zhand_cost,
+                self.theta_cost,
+                self.wrench_regularization_cost
+            ]
+
+            self.mode_constraint = [
+                self.friction_right_contact_constraint,
+                self.friction_left_contact_constraint,
+                self.torque_right_contact_constraint,
+                self.torque_left_contact_constraint,
+                self.normal_force_max_contact_constraint,
+                self.normal_force_min_contact_constraint
+            ]
+
+        if self.mode == 5:   #  static object flush move
+            self.current_params=self.param_dict['static_object_flush_move_params']
+
+            self.mode_cost = [
+                self.xhand_cost,
+                self.zhand_cost,
+                self.wrench_regularization_cost
+            ]
+
+            self.mode_constraint = [
+                self.friction_right_contact_constraint,
+                self.friction_left_contact_constraint,
+                self.torque_right_contact_constraint,
+                self.torque_left_contact_constraint,
+                self.normal_force_max_contact_constraint,
+                self.normal_force_min_contact_constraint
+            ]
+
+        if self.mode == 6:
+
+            self.current_params=self.param_dict['pure_stick_params']
+
+            self.mode_cost = [
+                self.wrench_regularization_cost,
+                self.normal_force_robot_pivot_cost
+                ]
+
+            self.mode_constraint = [
+                self.friction_right_contact_constraint,
+                self.friction_left_contact_constraint,
+                self.torque_right_contact_constraint,
+                self.torque_left_contact_constraint,
+                self.normal_force_max_contact_constraint
+                ]
+
+    def compute_error_theta(self):
+        self.err_theta = self.compute_general_error(
+            error_value=self.err_dict['err_theta'],
+            scale_value=self.current_params['theta_scale'])
+
+    def compute_error_N(self):
+        self.err_N = self.compute_general_error(
+            error_value=(self.current_params['N_tar'] - self.contact_wrench[0]),
+            scale_value=self.current_params['N_scale'])
+
+    def compute_error_s(self):
+        self.err_s = self.compute_general_error(
+            error_value=self.err_dict['err_s'],
+            scale_value=self.current_params['s_scale'])
+
+    def compute_error_x_pivot(self):    
+        self.err_x_pivot = self.compute_general_error(
+            error_value=self.err_dict['err_x_pivot'],
+            scale_value=self.current_params['x_pivot_scale'])
+
+    def compute_error_xhand(self):
+        self.err_xhand = self.compute_general_error(
+            error_value=self.err_dict['err_xhand'],
+            scale_value=self.current_params['hand_pos_scale'])
+
+    def compute_error_zhand(self):
+        self.err_zhand = self.compute_general_error(
+            error_value=self.err_dict['err_zhand'],
+            scale_value=self.current_params['hand_pos_scale'])
+
+
+    def compute_general_error(self, error_value, scale_value):
+        return (2./np.pi)* np.arctan(error_value/scale_value)
+
+    def slide_right_robot_cost(self):
+        ''' cost term for sliding right at robot '''
+        self.compute_error_s()
+        if self.current_params['use_measured_mu_contact'] and (self.pbal_helper.mu_contact is not None):
+            mu_c = self.pbal_helper.mu_contact
+        else:
+            mu_c = self.current_params['mu_contact']
+
+        return self.general_cost(
+            base_error=self.err_s,
+            base_vec=np.array([-mu_c, 1., 0.]),
+            K=self.current_params['K_s'],
+            concavity=self.current_params['concavity_s'])
+
+    def slide_left_robot_cost(self):
+        ''' cost term for sliding left at robot '''
+        self.compute_error_s()
+        if self.current_params['use_measured_mu_contact'] and (self.pbal_helper.mu_contact is not None):
+            mu_c = self.pbal_helper.mu_contact
+        else:
+            mu_c = self.current_params['mu_contact']
+
+        return self.general_cost(
+            base_error=-self.err_s,
+            base_vec=np.array([-mu_c, -1., 0.]),
+            K=self.current_params['K_s'],
+            concavity=self.current_params['concavity_s'])
+
+    def slide_right_external_cost(self):
+        ''' cost term for sliding right at external '''
+        self.compute_error_x_pivot()
+        if self.current_params['use_measured_mu_ground'] and (self.pbal_helper.mu_ground is not None):
+            mu_g = self.pbal_helper.mu_ground
+        else:
+            mu_g = self.current_params['mu_ground']
+
+        return self.general_cost(
+            base_error=-self.err_x_pivot,
+            base_vec=np.dot(np.array([-1., -mu_g, 0.]), self.R2C),
+            K=self.current_params['K_x_pivot'],
+            concavity=self.current_params['concavity_x_pivot'])
+
+    def slide_left_external_cost(self):
+        ''' cost term for sliding left at external '''
+        self.compute_error_x_pivot()
+        if self.current_params['use_measured_mu_ground'] and (self.pbal_helper.mu_ground is not None):
+            mu_g = self.pbal_helper.mu_ground
+        else:
+            mu_g = self.current_params['mu_ground']
+
+        return self.general_cost(
+            base_error=self.err_x_pivot,
+            base_vec=np.dot(np.array([1., -mu_g, 0.]), self.R2C),
+            K=self.current_params['K_x_pivot'],
+            concavity=self.current_params['concavity_x_pivot'])
+
+    def normal_force_cost(self):
+        ''' cost encouraging normal force to be at N_tar '''
+        self.compute_error_N()
+        return self.general_cost(
+            base_error=self.err_N,
+            base_vec=np.array([1., 0, 0.]),
+            K=self.current_params['K_N'],
+            concavity=self.current_params['concavity_N'])
+
+    def wrench_regularization_cost(self):
+        ''' cost encouraging delta wrench to be small in 2-norm '''
+        return self.current_params['wrench_regularization_constant'] * np.identity(
+            3), np.zeros(3), np.zeros(3), 0.
+
+    def xhand_cost(self):
+        ''' cost minimizing x-error in free move in world frame '''
+        self.compute_error_xhand()               
+        return self.general_cost(
+            base_error=self.err_xhand,
+            base_vec= np.dot(np.array([1., 0., 0.]), self.R2C),
+            K=self.current_params['K_pos_hand'],
+            concavity=self.current_params['concavity_pos_hand'])
+
+    def zhand_cost(self):
+        ''' cost minimizing z-error in free move in world frame '''
+        self.compute_error_zhand()
+        return self.general_cost(
+            base_error=self.err_zhand,
+            base_vec= np.dot(np.array([0., 1., 0.]), self.R2C),
+            K=self.current_params['K_pos_hand'],
+            concavity=self.current_params['concavity_pos_hand'])
+
+    def theta_cost(self):
+        ''' cost term for rotating about pivot '''
+        self.compute_error_theta()
+        if self.s_hand is None or self.l_hand is None:
+            if self.mode == -1:
+                base_vec = np.array([0., -.01, 1.])
+            else: 
+                base_vec = np.array([0., 0., 1.])
+        else:
+            base_vec = np.array([-self.s_hand, self.l_hand, 1.])
+        return self.general_cost(
+            base_error=self.err_theta,
+            base_vec=base_vec,
+            K=self.current_params['K_theta'],
+            concavity=self.current_params['concavity_theta'])
+
+    def general_cost(self, base_error, base_vec, K, concavity):
+        proj_vec = base_vec*concavity
+        error = base_error*K
+        return np.outer(proj_vec, proj_vec
+            ), -2 * proj_vec * error, proj_vec, error
+
+    def friction_right_contact_constraint(self):
         ''' right (i.e., positive) boundary of friction cone '''
-        mu_c = self.pbal_helper.mu_contact
+        if self.current_params['use_measured_mu_contact'] and (self.pbal_helper.mu_contact is not None):
+            mu_c = self.pbal_helper.mu_contact
+        else:
+            mu_c = self.current_params['mu_contact']
+
         aiq = np.array([-mu_c, 1., 0.])/np.sqrt(1 + mu_c ** 2)
-        biq = 0.
-        return aiq, biq, self.tr_friction_right_robot_pivot
+        biq = -self.current_params['friction_margin']
+        return aiq, biq, self.current_params['tr_friction']
 
-    def friction_left_robot_pivot_constraint(self):
+    def friction_left_contact_constraint(self):
         ''' left (i.e., negative) boundary of friction cone '''
-        mu_c = self.pbal_helper.mu_contact
+        if self.current_params['use_measured_mu_contact'] and (self.pbal_helper.mu_contact is not None):
+            mu_c = self.pbal_helper.mu_contact
+        else:
+            mu_c = self.current_params['mu_contact']
+
         aiq = np.array([-mu_c, -1., 0.])/np.sqrt(1 + mu_c ** 2)
-        biq = 0.
-        return aiq, biq, self.tr_friction_left_robot_pivot
+        biq = -self.current_params['friction_margin']
+        return aiq, biq, self.current_params['tr_friction']
 
-    def torque_right_robot_pivot_constraint(self):
+    def torque_right_contact_constraint(self):
         ''' right (i.e., positive) boundary of torque cone '''
-        lc = self.pbal_helper.l_contact
+        lc = self.pbal_helper.l_contact * self.current_params['l_contact_multiplier']
         aiq = np.array([-lc / 2., 0., 1.])
-        biq = -self.torque_margin_robot_pivot
-        return aiq, biq, self.tr_torque_right_robot_pivot
+        biq = -self.current_params['torque_margin']
+        return aiq, biq, self.current_params['tr_torque']
 
-    def torque_left_robot_pivot_constraint(self):
-        ''' right (i.e., positive) boundary of torque cone '''
-        lc = self.pbal_helper.l_contact
+    def torque_left_contact_constraint(self):
+        ''' left (i.e., negative) boundary of torque cone '''
+        lc = self.pbal_helper.l_contact * self.current_params['l_contact_multiplier']
         aiq = np.array([-lc / 2., 0., -1.])
-        biq = -self.torque_margin_robot_pivot
-        return aiq, biq, self.tr_friction_left_robot_pivot
+        biq = -self.current_params['torque_margin']
+        return aiq, biq, self.current_params['tr_torque']
 
-    def normal_force_max_robot_pivot_constraint(self):
-        ''' maximum applied normal force constraint '''
-        Nm = self.Nmax
+    def normal_force_max_contact_constraint(self):
+        ''' maximum applied normal force at contact constraint '''
+        Nm = self.current_params['Nmax_contact']
         aiq = np.array([1., 0., 0.])
         biq = Nm
-        return aiq, biq, self.tr_max_normal_robot_pivot
+        return aiq, biq, self.current_params['tr_max_normal_contact']
 
-    def friction_right_external_pivot_constraint(self):
+    def normal_force_min_contact_constraint(self):
+        ''' maximum applied normal force at contact constraint '''
+        Nm = self.current_params['Nmin_contact']
+        aiq = np.array([-1., 0., 0.])
+        biq = -Nm
+        return aiq, biq, self.current_params['tr_min_normal_contact']
+
+    def normal_force_min_external_constraint(self):
+        ''' normal force at external contact must be above 0 '''
+        aiq = np.dot(np.array([0., 1., 0.]), self.R2C)
+        biq = 0.
+        return aiq, biq, self.current_params['tr_min_normal_external']
+
+    def friction_right_external_constraint(self):
         ''' right (i.e., positive) boundary of friction cone '''
-        mu_g = self.pbal_helper.mu_ground
-        R2C = self.pbal_helper.contact2robot(
-            np.array([0., 0., self.theta_hand]))
-        aiq = np.dot(np.array([-1., mu_g, 0.]), R2C)
-        biq = 0.
-        return aiq, biq, self.tr_friction_right_external_pivot
-
-    def friction_left_external_pivot_constraint(self):
-        ''' left (i.e., negative) boundary of friction cone '''
-        mu_g = self.pbal_helper.mu_ground
-        R2C = self.pbal_helper.contact2robot(np.array(
-            [0., 0., self.theta_hand]))
-        aiq = np.dot(np.array([1., mu_g, 0.]), R2C)
-        biq = 0.
-        return aiq, biq, self.tr_friction_left_external_pivot
-
-    def normal_force_min_external_pivot_constraint(self):
-        ''' normal force at external contact must be positive '''
-        R2C = self.pbal_helper.contact2robot(
-            np.array([0., 0., self.theta_hand]))
-        aiq = np.dot(np.array([0., 1., 0.]), R2C)
-        biq = 0.
-        return aiq, biq, self.tr_min_normal_external_pivot
-
-    def theta_error_pivot_cost(self):
-        ''' cost term for rotating about pivot '''
-        if self.s_hand is None or self.l_hand is None:
-            proj_vec = self.concavity_theta_pivot * np.array(
-                [0., 0., 1])
+        if self.current_params['use_measured_mu_ground'] and (self.pbal_helper.mu_ground is not None):
+            mu_g = self.pbal_helper.mu_ground
         else:
-            proj_vec = self.concavity_theta_pivot * np.array(
-                [-self.s_hand, self.l_hand, 1.])
-        error = self.K_theta_pivot * self.err_theta_pivot
-        return np.outer(proj_vec, proj_vec), -2 * proj_vec * error
+            mu_g = self.current_params['mu_ground']
+        aiq = np.dot(np.array([-1., mu_g, 0.]), self.R2C)
+        biq = 0.
+        return aiq, biq, self.current_params['tr_friction_external']
 
-    def slide_right_robot_pivot_cost(self):
-        ''' cost term for sliding right at robot '''
-        proj_vec = self.concavity_s_pivot * np.array(
-                [-self.pbal_helper.mu_contact, 1., 0.])
-        error = self.K_s_pivot * self.err_s_pivot
-        return np.outer(proj_vec, proj_vec), -2 * proj_vec * error
+    def friction_left_external_constraint(self):
+        ''' left (i.e., positive) boundary of friction cone '''
+        if self.current_params['use_measured_mu_ground'] and (self.pbal_helper.mu_ground is not None):
+            mu_g = self.pbal_helper.mu_ground
+        else:
+            mu_g = self.current_params['mu_ground']
 
-    def slide_left_robot_pivot_cost(self):
-        ''' cost term for sliding left at robot '''
-        proj_vec = self.concavity_s_pivot * np.array(
-            [-self.pbal_helper.mu_contact, -1., 0.])
-        error = -self.K_s_pivot * self.err_s_pivot
-        return np.outer(proj_vec, proj_vec), -2 * proj_vec * error
-
-    def slide_right_external_pivot_cost(self):
-        ''' cost term for sliding right at external '''
-        R2C = self.pbal_helper.contact2robot(np.array(
-            [0., 0., self.theta_hand]))
-        proj_vec = self.concavity_x_pivot * np.dot(np.array(
-            [-1., -self.pbal_helper.mu_ground, 0.]), R2C)
-        error = -self.K_x_pivot * self.err_x_pivot
-        return np.outer(proj_vec, proj_vec), -2 * proj_vec * error
-
-    def slide_left_external_pivot_cost(self):
-        ''' cost term for sliding left at external '''
-        R2C = self.pbal_helper.contact2robot(np.array(
-            [0., 0., self.theta_hand]))
-        proj_vec = self.concavity_x_pivot * np.dot(np.array(
-            [1., -self.pbal_helper.mu_ground, 0.]), R2C)
-        error = self.K_x_pivot * self.err_x_pivot
-        return np.outer(proj_vec, proj_vec), -2 * proj_vec * error
-
-    def normal_force_robot_pivot_cost(self):
-        ''' cost encouraging normal force to be at Nmax/2 '''
-        proj_vec = self.concavity_N_pivot * np.array(
-            [1., 0., 0.])
-        error = self.K_N_pivot * self.err_N_pivot
-        print(error)
-        return np.outer(proj_vec, proj_vec), -2 * proj_vec * error
-
-    def wrench_regularization_robot_pivot_cost(self):
-        ''' cost encouraging delta wrench to be small in 2-norm '''
-        return self.wrench_regularization_constant * np.identity(
-            3), np.zeros(3)
-
-    def reset_state_errors(self):
-    	
-    	self.err_theta_pivot = None
-    	self.err_s_pivot = None
-    	self.err_x_pivot = None
-    	self.err_N_pivot = None
-
-    	self.err_theta_free = None
-    	self.err_xhand_free = None
-    	self.err_zhand_free = None
-
-    def set_objective_function_paramater_values(self, param_dict):
-
-        # objective function parameters: theta, line/line plus point/line
-        self.K_theta_pivot = param_dict['K_theta_pivot']
-        self.theta_scale_pivot = param_dict['theta_scale_pivot']
-        self.concavity_theta_pivot = param_dict['concavity_theta_pivot']
-    
-    	# objective function parameters: s, line/line plus point/line
-        self.K_s_pivot = param_dict['K_s_pivot']
-        self.s_scale_pivot = param_dict['s_scale_pivot']
-        self.concavity_s_pivot = param_dict['concavity_s_pivot']
-    
-    	# objective function parameters: x, line/line plus point/line
-        self.K_x_pivot = param_dict['K_x_pivot']
-        self.x_scale_pivot = param_dict['x_scale_pivot']
-        self.concavity_x_pivot = param_dict['concavity_x_pivot']
-
-        # objective function parameters: N, line/line plus point/line
-        self.K_N_pivot = param_dict['K_N_pivot']
-        self.N_scale_pivot = param_dict['N_scale_pivot']
-        self.concavity_N_pivot = param_dict['concavity_N_pivot']
-    
-        # objective function parameters: theta, free
-        self.K_theta_free = param_dict['K_theta_free']
-        self.theta_scale_free = param_dict['theta_scale_free']
-        self.concavity_theta_free = param_dict['concavity_theta_free']
-
-        # objective function parameters: x-hand, free
-        self.K_xhand_free = param_dict['K_xhand_free']
-        self.xhand_scale_free = param_dict['xhand_scale_free']
-        self.concavity_xhand_free = param_dict['concavity_xhand_free']
-
-        # objective function parameters: z-hand, free
-        self.K_zhand_free = param_dict['K_zhand_free']
-        self.zhand_scale_free = param_dict['zhand_scale_free']
-        self.concavity_zhand_free = param_dict['concavity_zhand_free']
-
-        self.wrench_regularization_constant = param_dict['wrench_regularization_constant']
-
-
-    def set_constraint_function_parameter_values(self, param_dict):
-
-        # barrier function parameters for line/line plus point/line
-        self.tr_friction_left_robot_pivot = param_dict['tr_friction_left_robot_pivot']
-        self.tr_friction_right_robot_pivot = param_dict['tr_friction_right_robot_pivot']
-        self.tr_torque_left_robot_pivot = param_dict['tr_torque_left_robot_pivot']
-        self.tr_torque_right_robot_pivot = param_dict['tr_torque_right_robot_pivot']
-        self.tr_max_normal_robot_pivot = param_dict['tr_friction_robot_left_pivot']
-        self.tr_friction_left_external_pivot = param_dict['tr_friction_left_external_pivot']
-        self.tr_friction_right_external_pivot = param_dict['tr_friction_right_external_pivot']
-        self.tr_min_normal_external_pivot = param_dict['tr_min_normal_external_pivot']
-        self.torque_margin_robot_pivot = param_dict['torque_margin_robot_pivot']
-
-        # barrier function parameters for line/line plus point/line
-        self.tr_friction_left_robot_free = param_dict['tr_friction_left_robot_free']
-        self.tr_friction_right_robot_free = param_dict['tr_friction_right_robot_free']
-        self.tr_torque_left_robot_free = param_dict['tr_torque_left_robot_free']
-        self.tr_torque_right_robot_free = param_dict['tr_torque_right_robot_free']
-        self.tr_max_normal_robot_free = param_dict['tr_friction_robot_left_free']
-
-        self.friction_margin_robot_free = param_dict['friction_margin_robot_free']
-        self.torque_margin_robot_free = param_dict['torque_margin_robot_free']
-        self.l_contact_multiplier_robot_free = param_dict['l_contact_multiplier_robot_free']
-  
-        
+        aiq = np.dot(np.array([1., mu_g, 0.]), self.R2C)
+        biq = 0.
+        return aiq, biq, self.current_params['tr_friction_external']

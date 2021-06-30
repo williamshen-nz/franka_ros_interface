@@ -2,9 +2,9 @@
 import rospy
 import pdb
 import numpy as np
+import json
 
-from std_msgs.msg import Float32
-from franka_ros_controllers.msg import PbalBarrierFuncCommand
+from std_msgs.msg import Float32, String
 
 def gravity_torque_callback(data):
     global mgl
@@ -13,22 +13,20 @@ def gravity_torque_callback(data):
 if __name__ == '__main__':
 
     rospy.init_node("barrier_func_commands")
-    rate = rospy.Rate(0.2) # in yaml
+    rate = rospy.Rate(0.1) # in yaml
     rospy.sleep(1.0)
 
+    command_msg = String()
 
-    command_msg = PbalBarrierFuncCommand()
-
-
-    command_msg.theta = np.pi/8
-    command_msg.x = 0.5
-    command_msg.s = 0.0
-    command_msg.command_flag = 0
-    command_msg.mode = -1
+    command_msg_dict = {
+        "theta" : np.pi/12,
+        "command_flag" : 0,
+        "mode" : -1
+    }
 
     control_command_pub = rospy.Publisher(
         '/barrier_func_control_command', 
-        PbalBarrierFuncCommand,
+        String,
         queue_size=10)
 
     gravity_torque_sub = rospy.Subscriber("/gravity_torque", 
@@ -37,12 +35,14 @@ if __name__ == '__main__':
     mgl = None
     print("starting theta dither")
     while (mgl is None) and (not rospy.is_shutdown()):
-            
+    #while True:    
+            command_msg.data = json.dumps(command_msg_dict)            
             control_command_pub.publish(command_msg)
-            command_msg.theta *= -1
+            command_msg_dict["theta"] *= -1
             rate.sleep()
 
-    command_msg.theta = 0
+    command_msg_dict["theta"] = 0
+    command_msg.data = json.dumps(command_msg_dict)            
     control_command_pub.publish(command_msg)  
     print("theta dither complete")
 

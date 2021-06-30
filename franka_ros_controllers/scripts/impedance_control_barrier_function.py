@@ -7,6 +7,7 @@ import tf2_ros
 import rospy
 import copy
 import pdb
+import json
 import matplotlib.pyplot as plt
 from matplotlib import cm
 
@@ -14,8 +15,7 @@ import franka_helper
 import models.ros_helper as ros_helper
 from franka_interface import ArmInterface 
 from geometry_msgs.msg import TransformStamped, PoseStamped, WrenchStamped
-from std_msgs.msg import Float32MultiArray, Float32, Bool
-from franka_ros_controllers.msg import PbalBarrierFuncCommand
+from std_msgs.msg import Float32MultiArray, Float32, Bool, String
 from franka_tools import CollisionBehaviourInterface
 
 from models.system_params import SystemParams
@@ -124,7 +124,7 @@ def gravity_torque_callback(data):
 
 def barrier_func_control_command_callback(data):
     global command_msg_queue
-    command_msg_queue.append(data)
+    command_msg_queue.append(json.loads(data.data))
     if len(command_msg_queue) > 10:
         command_msg_queue.pop(0)
 
@@ -173,13 +173,18 @@ if __name__ == '__main__':
         Float32, robot_friction_coeff_callback)
     gravity_torque_sub = rospy.Subscriber("/gravity_torque", Float32, gravity_torque_callback)
     com_ray_sub = rospy.Subscriber("/com_ray", Float32, com_ray_callback)
-    control_command_sub = rospy.Subscriber('/barrier_func_control_command', PbalBarrierFuncCommand,
+    control_command_sub = rospy.Subscriber('/barrier_func_control_command', String,
             barrier_func_control_command_callback)
 
-    # setting up publisher
+    # setting up publisher for sliding
     pivot_sliding_flag_pub = rospy.Publisher('/pivot_sliding_flag', Bool, 
         queue_size=10)
     pivot_sliding_flag_msg = Bool()
+
+    # publisher for qp debug message
+    qp_debug_message_pub = rospy.Publisher('/qp_debug_message', String,
+        queue_size=10)
+    qp_debug_msg = String()
 
     # make sure we have end effector wrench
     print("Waiting for end effector wrench")
@@ -190,6 +195,8 @@ if __name__ == '__main__':
     print("Waiting for control command")
     while not command_msg_queue:
         rospy.sleep(0.1)
+
+    print("First control command recieved")
 
     # intialize frame
     frame_message = initialize_frame()
@@ -211,9 +218,7 @@ if __name__ == '__main__':
     # controller parameters
     param_dict = copy.deepcopy(controller_params)
     param_dict['obj_params'] = obj_params
-    print(param_dict['theta_scale_pivot'])
-    param_dict['torque_margin_robot_pivot'] = param_dict[
-        'torque_margin_robot_pivot_factor'] * param_dict['Nmax']
+    # print(param_dict['theta_scale_pivot'])
     
     # create inverse model
     pbc = ModularBarrierController(param_dict)
@@ -229,192 +234,213 @@ if __name__ == '__main__':
     target_pose_contact_frame, state_not_exists_bool, mode = None, True, None
     state_not_exists_when_recieved_command = True
 
+    coord_set = {}
+
     print('starting control loop')
     while not rospy.is_shutdown():
 
-            # snapshot of current generalized position estimate
-            if generalized_positions is None:
-                endpoint_pose = arm.endpoint_pose()
-                quat_list = franka_helper.franka_orientation2list(
-                    endpoint_pose['orientation'])
-                theta = ros_helper.quatlist_to_theta(quat_list)
-                contact_pose = np.array([0, 0, theta])
-                state_not_exists_bool = True
+        # snapshot of current generalized position estimate
+        if generalized_positions is None:
+            endpoint_pose = arm.endpoint_pose()
+            quat_list = franka_helper.franka_orientation2list(
+                endpoint_pose['orientation'])
+            theta = ros_helper.quatlist_to_theta(quat_list)
+            contact_pose = np.array([None, None, theta])
+            state_not_exists_bool = True
+        else:
+            contact_pose = copy.deepcopy(generalized_positions)
+            state_not_exists_bool = False
+
+        # update estimated values in controller
+        if pivot_xyz is None:
+            pbc.pbal_helper.pivot = None
+        else:
+            pbc.pbal_helper.pivot = np.array([pivot_xyz[0], pivot_xyz[2]])
+
+        pbc.mgl = mgl
+        pbc.theta0 = theta0
+        
+        if robot_friction_coeff is not None:
+            pbc.mu_contact = robot_friction_coeff
+        else: 
+            pbc.mu_contact = initial_object_params["MU_CONTACT_0"]
+
+        # unpack current message
+        if command_msg_queue:
+
+
+            if state_not_exists_bool:
+                state_not_exists_when_recieved_command = True
             else:
-                contact_pose = copy.deepcopy(generalized_positions)
-                state_not_exists_bool = False
+                state_not_exists_when_recieved_command = False
 
-            # update estimated values in controller
-            if pivot_xyz is None:
-                pbc.pbal_helper.pivot = None
-            else:
-                pbc.pbal_helper.pivot = np.array([pivot_xyz[0], pivot_xyz[2]])
+            current_msg = command_msg_queue.pop(0)
 
-            pbc.mgl = mgl
-            pbc.theta0 = theta0
-            
-            if robot_friction_coeff is not None:
-                pbc.mu_contact = robot_friction_coeff
-            else: 
-                pbc.mu_contact = initial_object_params["MU_CONTACT_0"]
+            command_flag = current_msg["command_flag"]
+            mode = current_msg["mode"]
 
-            # unpack current message
-            if command_msg_queue:
+            if mode == -1:
+                coord_set = {'theta'}
+            if mode == 0 or mode == 1:
+                coord_set = {'theta','s'}
+            if mode == 2 or mode == 3:
+                coord_set = {'theta','x_pivot'}
+            if mode == 4:
+                coord_set = {'theta','xhand','zhand'}
+            if mode == 5:
+                coord_set = {'xhand','zhand'}
+            if mode == 6:
+                coord_set = {}
 
-                if state_not_exists_bool:
-                    state_not_exists_when_recieved_command = True
-                else:
-                    state_not_exists_when_recieved_command = False
+            if command_flag == 0: # absolute move
 
-                current_msg = command_msg_queue.pop(0)
-                command_flag = current_msg.command_flag
-                mode = current_msg.mode
+                #if state_not_exists_when_recieved_command:
+                #    mode = -1
+                if 'theta' in coord_set:                    
+                    theta_target = current_msg["theta"]
+                if 's' in coord_set:
+                    s_target = current_msg["s"]
+                if 'x_pivot' in coord_set:
+                    x_pivot_target = current_msg["x_pivot"]
+                if 'xhand' in coord_set:
+                    xhand_target = current_msg["xhand"]
+                if 'zhand' in coord_set:
+                    zhand_target = current_msg["zhand"]                                        
 
-                if command_flag == 0: # absolute move
-                    target_pose_contact_frame = np.array([contact_pose[0], 
-                        current_msg.s, current_msg.theta])
+            if command_flag == 1: # relative move
+                # current pose
+                starting_xyz_theta_robot_frame = get_robot_world_xyz_theta(arm)
+                # target pose
+                target_xyz_theta_robot_frame = copy.deepcopy(
+                        starting_xyz_theta_robot_frame)
 
-                    x_piv = current_msg.x
-
-                    if state_not_exists_when_recieved_command:
-                        mode = -1
-                    
-
-                if command_flag == 1: # relative move
-
-                    delta_target_pose_contact_frame = np.array([
-                        0, current_msg.delta_s, 
-                        current_msg.delta_theta])
-
-                    if state_not_exists_when_recieved_command: 
-
-                        # current pose
-                        starting_xyz_theta_robot_frame = get_robot_world_xyz_theta(
-                            arm)
-
-                        # target pose
-                        target_xyz_theta_robot_frame = copy.deepcopy(
-                            starting_xyz_theta_robot_frame)
-
-                        if mode == -1:
-                            target_xyz_theta_robot_frame[3] += current_msg.delta_theta
-                        if mode == 0 or mode == 1:
-                            target_xyz_theta_robot_frame[0] += current_msg.delta_s * -np.cos(
-                                target_xyz_theta_robot_frame[3])
-                            target_xyz_theta_robot_frame[2] += current_msg.delta_s * np.sin(
-                                target_xyz_theta_robot_frame[3])
-                        if mode == 2 or mode == 3:
-                            target_xyz_theta_robot_frame[0] += current_msg.delta_x
-                                            
+                if 'theta' in coord_set:
+                    if current_msg["delta_theta"] == None:
+                        theta_target = None
                     else:
-                        target_pose_contact_frame = contact_pose + \
-                            delta_target_pose_contact_frame
-                        x_piv = pbc.pbal_helper.pivot[
-                            0] + current_msg.delta_x
+                        theta_target = target_xyz_theta_robot_frame[3] + current_msg["delta_theta"]
+                if 's' in coord_set:
+                    if state_not_exists_when_recieved_command:
+                        target_xyz_theta_robot_frame[0] += current_msg["delta_s"] * -np.cos(
+                            target_xyz_theta_robot_frame[3])
+                        target_xyz_theta_robot_frame[2] += current_msg["delta_s"] * np.sin(
+                            target_xyz_theta_robot_frame[3])
+                    else:
+                        s_target = contact_pose[1] + current_msg["delta_s"]
+                if 'x_pivot' in coord_set:
+                    if state_not_exists_when_recieved_command:
+                        target_xyz_theta_robot_frame[0] += current_msg["delta_x_pivot"]
+                    else: 
+                        x_pivot_target = pbc.pbal_helper.pivot[0] + current_msg["delta_x_pivot"]
+                if 'xhand' in coord_set:
+                    xhand_target = starting_xyz_theta_robot_frame[0] + current_msg["delta_xhand"]
+                if 'zhand' in coord_set:
+                    zhand_target = starting_xyz_theta_robot_frame[2] + current_msg["delta_zhand"]
+    
+                        
 
             # publish if we intend to slide at pivot
             if mode == 2 or mode == 3:
                 pivot_sliding_flag = True
             else:
                 pivot_sliding_flag = False
+
             pivot_sliding_flag_msg.data = pivot_sliding_flag
-            pivot_sliding_flag_pub.publish(pivot_sliding_flag_msg)
+
+        # compute error
+
+        # current pose
+        current_xyz_theta_robot_frame = get_robot_world_xyz_theta(
+                            arm)
+
+        err_dict = dict()
+
+        if 'theta' in coord_set:
+            if theta_target == None:
+                theta_target = np.arctan2(
+                    xhand_target - current_xyz_theta_robot_frame[0],
+                    zhand_target - current_xyz_theta_robot_frame[2])         
+            err_dict["err_theta"] = theta_target - current_xyz_theta_robot_frame[3]
+            while err_dict["err_theta"]> np.pi:
+                err_dict["err_theta"]-= 2*np.pi
+            while err_dict["err_theta"]< -np.pi:
+                err_dict["err_theta"]+= 2*np.pi
+        if 's' in coord_set:
+            if state_not_exists_when_recieved_command and command_flag == 1:
+                delta_x = target_xyz_theta_robot_frame[0
+                    ] - current_xyz_theta_robot_frame[0]
+
+                delta_z = target_xyz_theta_robot_frame[2
+                        ] - current_xyz_theta_robot_frame[2]
+                err_dict["err_s"] = delta_x * -np.cos(theta_target) + delta_z* np.sin(theta_target)
+            if not state_not_exists_when_recieved_command:
+                err_dict["err_s"] = s_target - contact_pose[1]
+        if 'x_pivot' in coord_set:
+            if state_not_exists_when_recieved_command and command_flag == 1:
+                err_dict["err_x_pivot"] = target_xyz_theta_robot_frame[0
+                    ] - current_xyz_theta_robot_frame[0]
+            if not state_not_exists_when_recieved_command:
+                err_dict["err_x_pivot"] = x_pivot_target - pbc.pbal_helper.pivot[0]
+        if 'xhand' in coord_set:
+            err_dict["err_xhand"] = xhand_target - current_xyz_theta_robot_frame[0]
+        if 'zhand' in coord_set:
+            err_dict["err_zhand"] = zhand_target - current_xyz_theta_robot_frame[2]
 
 
-            # compute error
-            if state_not_exists_when_recieved_command:
+        # measured contact wrench
+        measured_contact_wench_6D = ros_helper.wrench_stamped2list(
+            end_effector_wrench)
+        measured_contact_wrench = -np.array([
+            measured_contact_wench_6D[0], 
+            measured_contact_wench_6D[1],
+            measured_contact_wench_6D[-1]])
 
-                if current_msg.command_flag == 0: # absolute move
-                    delta_contact_pose = target_pose_contact_frame - contact_pose
-                    delta_x_pivot = 0
-                    
-                if current_msg.command_flag == 1: # relative move
-                    # current pose
-                    current_xyz_theta_robot_frame = get_robot_world_xyz_theta(
-                                arm)
+        # update controller
+        pbc.update_controller(mode=mode, 
+            theta_hand=contact_pose[2], 
+            contact_wrench=measured_contact_wrench, 
+            err_dict = err_dict,
+            l_hand=contact_pose[0], 
+            s_hand=contact_pose[1])
 
-                    delta_theta = target_xyz_theta_robot_frame[3
-                            ] - current_xyz_theta_robot_frame[3]
+        # compute wrench increment 
 
-                    delta_x = target_xyz_theta_robot_frame[0
-                            ] - current_xyz_theta_robot_frame[0]
+        #try:
+        wrench_increment_contact, debug_str = pbc.solve_for_delta_wrench()
+        qp_debug_msg.data = debug_str
+        #except Exception as e:                
+        #    print("couldn't find solution")
+        #    wrench_increment_contact = np.zeros(3)
+        #    qp_debug_msg.data = ''
 
-                    delta_z = target_xyz_theta_robot_frame[2
-                            ] - current_xyz_theta_robot_frame[2]
+        # convert wrench to robot frame
+        contact2robot = pbc.pbal_helper.contact2robot(contact_pose)
+        wrench_increment_robot = np.dot(contact2robot, 
+            wrench_increment_contact)
 
-                    theta_tar = target_xyz_theta_robot_frame[3]
+        # compute impedance increment
+        impedance_increment_robot = np.insert(wrench_increment_robot, 1, 
+            0.) / np.array(IMPEDANCE_STIFFNESS_LIST)[[0, 1, 2, 4]]
+        impedance_target += INTEGRAL_MULTIPLIER * impedance_increment_robot / RATE            
 
-                    delta_s = delta_x * -np.cos(theta_tar) + delta_z* np.sin(theta_tar)
+        # make pose to send to franka
+        waypoint_pose_list = robot2_pose_list(impedance_target[:3].tolist(),
+            impedance_target[3])
 
-                    if mode == -1:
-                        delta_contact_pose = np.array([0., 0., delta_theta])
-                        delta_x_pivot = 0.
-                    if mode == 0 or mode == 1:
-                        delta_contact_pose = np.array([0., delta_s, delta_theta])
-                        delta_x_pivot = 0.
-                    if mode == 2 or mode == 3:
-                        delta_contact_pose = np.array([0., 0., delta_theta])
-                        delta_x_pivot = delta_x
+        waypoint_franka_pose = franka_helper.list2franka_pose(
+            waypoint_pose_list)
 
-            else:
-                delta_contact_pose = target_pose_contact_frame - contact_pose
-                delta_x_pivot = x_piv - pbc.pbal_helper.pivot[0]
+        # send command to franka
+        arm.set_cart_impedance_pose(waypoint_franka_pose,
+            stiffness=IMPEDANCE_STIFFNESS_LIST)
 
-            # measured contact wrench
-            measured_contact_wench_6D = ros_helper.wrench_stamped2list(
-                end_effector_wrench)
-            measured_contact_wrench = -np.array([
-                measured_contact_wench_6D[0], 
-                measured_contact_wench_6D[1],
-                measured_contact_wench_6D[-1]])
+        # pubish target frame
+        update_frame(ros_helper.list2pose_stamped(waypoint_pose_list), 
+            frame_message)
+        target_frame_pub.publish(frame_message)
+        target_frame_broadcaster.sendTransform(frame_message)
+        pivot_sliding_flag_pub.publish(pivot_sliding_flag_msg)
+        qp_debug_message_pub.publish(qp_debug_msg)
 
-            # print(delta_contact_pose)
-
-            # update controller
-            pbc.update_controller(mode=mode, 
-                theta_hand=contact_pose[2], 
-                contact_wrench=measured_contact_wrench, 
-                l_hand=contact_pose[0], 
-                s_hand=contact_pose[1], 
-                err_theta_pivot=delta_contact_pose[2], 
-                err_s_pivot=delta_contact_pose[1], 
-                err_x_pivot=delta_x_pivot)
-
-            # compute wrench increment          
-            try:
-                # wrench_increment_contact = pbc.solve_qp(measured_contact_wrench, \
-                #     contact_pose, delta_contact_pose, delta_x_pivot, mode, NMAX)
-                wrench_increment_contact = pbc.solve_for_delta_wrench()
-            except Exception as e:                
-                print("couldn't find solution")
-                wrench_increment_contact = np.zeros(3)
-
-            # convert wrench to robot frame
-            contact2robot = pbc.pbal_helper.contact2robot(contact_pose)
-            wrench_increment_robot = np.dot(contact2robot, 
-                wrench_increment_contact)
-
-            # compute impedance increment
-            impedance_increment_robot = np.insert(wrench_increment_robot, 1, 
-                0.) / np.array(IMPEDANCE_STIFFNESS_LIST)[[0, 1, 2, 4]]
-            impedance_target += INTEGRAL_MULTIPLIER * impedance_increment_robot / RATE            
-
-            # make pose to send to franka
-            waypoint_pose_list = robot2_pose_list(impedance_target[:3].tolist(),
-                impedance_target[3])
-
-            waypoint_franka_pose = franka_helper.list2franka_pose(
-                waypoint_pose_list)
-
-            # send command to franka
-            arm.set_cart_impedance_pose(waypoint_franka_pose,
-                stiffness=IMPEDANCE_STIFFNESS_LIST)
-
-            # pubish target frame
-            update_frame(ros_helper.list2pose_stamped(waypoint_pose_list), 
-                frame_message)
-            target_frame_pub.publish(frame_message)
-            target_frame_broadcaster.sendTransform(frame_message)
-
-            rate.sleep()
+        rate.sleep()
 
