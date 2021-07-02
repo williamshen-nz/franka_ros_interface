@@ -4,11 +4,13 @@ import rospy
 import tf
 import netft_rdt_driver.srv as srv
 import numpy as np
+import pdb
 
 from ros_helper import (unit_pose, list2pose_stamped, pose_stamped2list,
                                convert_reference_frame, quat2list, 
                                lookupTransform, wrenchstamped_2FT, rotate_wrench, 
-                               wrench_reference_point_change)
+                               wrench_reference_point_change, matrix_from_pose,
+                               wrench_stamped2list, list2wrench_stamped)
 from std_msgs.msg import Bool, Int32
 from geometry_msgs.msg import WrenchStamped
 from models.system_params import SystemParams
@@ -20,6 +22,7 @@ sys_params = SystemParams()
 LCONTACT = sys_params.object_params["L_CONTACT_MAX"]                                    # length of the end effector 
 NORMAL_FORCE_THRESHOLD = sys_params.estimator_params["NORMAL_FORCE_THRESHOLD_FORCE"] # Minimum required normal force
 TORQUE_BOUNDARY_MARGIN = sys_params.object_params["TORQUE_BOUNDARY_MARGIN"]             # in yaml
+END_EFFECTOR_MASS = sys_params.object_params["END_EFFECTOR_MASS"]
 
 def zero_ft_sensor():
     rospy.wait_for_service('/netft/zero', timeout=0.5)
@@ -69,12 +72,13 @@ if __name__ == '__main__':
     while ft_wrench_in_ft_sensor is None:
         pass
 
-    # # panda hand pose in base frame WHEN TARING
-    # (panda_hand_in_base_trans0, panda_hand_in_base_rot0) = \
-    #     lookupTransform('/panda_hand', 'base', listener)
-    # panda_hand_in_base_pose0 = list2pose_stamped(panda_hand_in_base_trans0 
-    #     + panda_hand_in_base_rot0, frame_id="base")
-    
+    # panda hand pose in base frame WHEN TARING
+    (panda_hand_in_base_trans0, panda_hand_in_base_rot0) = \
+        lookupTransform('/panda_hand', 'base', listener)
+    panda_hand_in_base_pose0 = list2pose_stamped(panda_hand_in_base_trans0 
+        + panda_hand_in_base_rot0, frame_id="base")
+    base_z_in_panda_hand0 = matrix_from_pose(
+        panda_hand_in_base_pose0)[2, :3]    
 
     # zero sensor
     zero_ft_sensor()
@@ -94,6 +98,7 @@ if __name__ == '__main__':
             lookupTransform('/panda_hand', 'base', listener)
         panda_hand_in_base_pose = list2pose_stamped(panda_hand_in_base_trans 
             + panda_hand_in_base_rot, frame_id="base")
+        base_z_in_panda_hand = matrix_from_pose(panda_hand_in_base_pose)[2, :3]   
 
         # ft sensor pose in end effector frame
         (ft_sensor_in_end_effector_trans, ft_sensor_end_effector_in_base_rot) = \
@@ -101,15 +106,22 @@ if __name__ == '__main__':
         ft_sensor_in_end_effector_pose = list2pose_stamped(ft_sensor_in_end_effector_trans 
             + ft_sensor_end_effector_in_base_rot, frame_id="/panda_hand")
  
-        # ft wrench in base frame
-        ft_wrench_in_base = rotate_wrench(ft_wrench_in_ft_sensor, 
-            ft_sensor_in_base_pose)
-        ft_wrench_in_base.header.frame_id = 'base'
-
-        # ft wrench in end-effector frame
-        ft_wrench_in_end_effector = rotate_wrench(ft_wrench_in_ft_sensor, 
+        # ft wrench reading in end-effector frame
+        ft_wrench_in_end_effector_reading = rotate_wrench(ft_wrench_in_ft_sensor, 
             ft_sensor_in_end_effector_pose)
+        ft_wrench_in_end_effector_list = wrench_stamped2list(
+            ft_wrench_in_end_effector_reading)
+        correction = (-base_z_in_panda_hand0 + base_z_in_panda_hand) * 9.81 * END_EFFECTOR_MASS
+        ft_wrench_in_end_effector_list[0] += correction[0]
+        ft_wrench_in_end_effector_list[1] += correction[1]
+        ft_wrench_in_end_effector_list[2] += correction[2]
+        ft_wrench_in_end_effector = list2wrench_stamped(ft_wrench_in_end_effector_list)
         ft_wrench_in_end_effector.header.frame_id = "/panda_hand"
+
+        # ft wrench in base frame
+        ft_wrench_in_base = rotate_wrench(ft_wrench_in_end_effector, 
+            panda_hand_in_base_pose)
+        ft_wrench_in_base.header.frame_id = 'base'
 
         # end effector wrench in end effector frame
         end_effector_wrench_in_end_effector = wrench_reference_point_change(

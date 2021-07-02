@@ -4,10 +4,12 @@ class SystemParams(object):
 
         self.object_params = {
             "L_CONTACT_MAX": 0.1,                     # m (length of robot/object contact)
-            "MU_GROUND_0": None,                       # friction between obj/ground
+            "MU_GROUND_0": None,                      # friction between obj/ground
             "MU_CONTACT_0": None,                     # friciton between robot/obj
-            "TORQUE_BOUNDARY_MARGIN": 0.8             # multiplies L_CONTACT to set conservative margin for torque boundary
+            "TORQUE_BOUNDARY_MARGIN": 0.8,             # multiplies L_CONTACT to set conservative margin for torque boundary
+            "END_EFFECTOR_MASS": 0.193              # hand mass (kg)
         }
+
 
         self.estimator_params = {
             "RATE": 100.,                           # hz
@@ -94,20 +96,20 @@ class SystemParams(object):
 
             "wrench_regularization_constant": 0.01,
 
-            "tr_friction": [20., 1.],        # barrier function parameters for line/line plus point/line
-            "friction_margin": -3.5,
+            "tr_friction": [1.5, .5],        # barrier function parameters for line/line plus point/line
+            "friction_margin": -.7,
             "mu_contact": 0.0,
             "use_measured_mu_contact": False,
 
-            "tr_torque": [4., 4.],
-            "torque_margin": -.3,
+            "tr_torque": [6., 6.],
+            "torque_margin": -.01,
             "l_contact_multiplier": 0.0,
 
-            "tr_max_normal_contact": [20., 1.],
-            "Nmax_contact": 3.5,
+            "tr_max_normal_contact": [1.5, .5],
+            "Nmax_contact": .7,
 
-            "tr_min_normal_contact": [20., 1.],
-            "Nmin_contact": -3.5
+            "tr_min_normal_contact": [1.5, .5],
+            "Nmin_contact": -.7
         }
 
         #static_object_flush_move_params = {
