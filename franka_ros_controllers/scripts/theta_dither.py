@@ -19,10 +19,12 @@ if __name__ == '__main__':
     command_msg = String()
 
     command_msg_dict = {
-        "theta" : np.pi/12,
+        "theta" : np.pi/20,
         "command_flag" : 0,
-        "mode" : -1
-    }
+        "mode" : -1,
+        "x_pivot" : 0.0,
+        "s" : 0.0,
+    }    
 
     control_command_pub = rospy.Publisher(
         '/barrier_func_control_command', 

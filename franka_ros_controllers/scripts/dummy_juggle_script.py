@@ -37,7 +37,7 @@ if __name__ == '__main__':
         "mode" : 1,
         "delta_theta" : 0,
         "delta_x_pivot" : 0.00,
-        "delta_s" : -0.02,
+        "delta_s" : -0.01,
     }
 
     delta_slide_robot_right = {
@@ -46,7 +46,7 @@ if __name__ == '__main__':
         "mode" : 0,
         "delta_theta" : 0,
         "delta_x_pivot" : 0.00,
-        "delta_s" : 0.02,
+        "delta_s" : 0.01,
     }
 
     delta_slide_pivot_left = {
@@ -158,7 +158,7 @@ if __name__ == '__main__':
         "name": "absolute_rotate_left",
         "command_flag" : 0,
         "mode" : -1,
-        "theta" : np.pi/14, #np.pi/6+np.pi/20,
+        "theta" : np.pi/7, #np.pi/6+np.pi/20,
         "x_pivot" : 0.0,
         "s" : 0.0,
     }
@@ -167,7 +167,7 @@ if __name__ == '__main__':
         "name": "absolute_rotate_right",
         "command_flag" : 0,
         "mode" : -1,
-        "theta" : -np.pi/14, #np.pi/6-np.pi/20,
+        "theta" : -np.pi/7, #np.pi/6-np.pi/20,
         "x_pivot" : 0.0,
         "s" : 0.0,
     }
@@ -227,15 +227,15 @@ if __name__ == '__main__':
         "delta_zhand" : .00,
     }
 
-    #command_msg_dict = absolute_rotate_right
+    command_msg_dict = absolute_rotate_right
     #command_msg_dict = absolute_rotate_left
-    command_msg_dict = absolute_rotate_center
-    # command_msg_dict = delta_rotate_left
+    #command_msg_dict = absolute_rotate_center
+    #command_msg_dict = delta_rotate_left
     #command_msg_dict = delta_rotate_right
     #command_msg_dict = delta_slide_robot_left
     #command_msg_dict = delta_slide_robot_right
     #command_msg_dict = delta_slide_pivot_left
-    # command_msg_dict = delta_slide_pivot_right
+    #command_msg_dict = delta_slide_pivot_right
 
     #command_msg_dict = delta_slide_pivot_line_contact_right
     #command_msg_dict = delta_slide_robot_line_contact_right
@@ -253,17 +253,14 @@ if __name__ == '__main__':
     #command_msg_dict = delta_flush_right
     #command_msg_dict = delta_flush_left
 
-    message_queue= [
-       # absolute_rotate_center,
-       absolute_rotate_left,
-       # delta_slide_robot_left,
-       # delta_slide_pivot_right,
-       # absolute_rotate_center,
-       absolute_rotate_right,
-       # delta_slide_robot_right,
-       # delta_slide_pivot_left,
-       absolute_rotate_center
-    ]
+    # message_queue= [
+    #    absolute_rotate_center,
+    #    delta_slide_robot_left,
+    #    absolute_rotate_left,
+    #    absolute_rotate_center,
+    #    delta_slide_robot_right,
+    #    absolute_rotate_right
+    # ]
 
 
     # message_queue = [
@@ -302,14 +299,14 @@ if __name__ == '__main__':
 
     # time.sleep(3)
 
-   # #  # for count in (1,5):
-    for message in message_queue:
-       #print(message["name"])
-       command_msg_dict = message
-       command_msg_string = json.dumps(command_msg_dict)
-       command_msg.data = command_msg_string
-       control_command_pub.publish(command_msg)
-       time.sleep(20)
+    # while True:
+    #     for message in message_queue:
+    #        #print(message["name"])
+    #        command_msg_dict = message
+    #        command_msg_string = json.dumps(command_msg_dict)
+    #        command_msg.data = command_msg_string
+    #        control_command_pub.publish(command_msg)
+    #        time.sleep(5)
 
     # command_msg_dict = absolute_rotate_center
     # # command_msg_dict_pruned = prune_command_message(command_msg_dict)

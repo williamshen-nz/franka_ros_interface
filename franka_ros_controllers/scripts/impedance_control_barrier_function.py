@@ -122,6 +122,12 @@ def gravity_torque_callback(data):
     global mgl
     mgl = data.data
 
+def friction_parameter_callback(data):
+    global friction_parameter_list
+    friction_parameter_list.append(json.loads(data.data))
+    if len(friction_parameter_list) > 3:
+       friction_parameter_list.pop(0)
+
 def barrier_func_control_command_callback(data):
     global command_msg_queue
     command_msg_queue.append(json.loads(data.data))
@@ -160,6 +166,8 @@ if __name__ == '__main__':
         , robot_friction_coeff, theta0, mgl, command_msg_queue\
         = None, None, None, None, None, None, None, []
 
+    friction_parameter_list, friction_parameter_dict = [], None
+
     # subscribers
     pivot_xyz_sub = rospy.Subscriber("/pivot_frame", 
         TransformStamped, pivot_xyz_callback)
@@ -175,11 +183,12 @@ if __name__ == '__main__':
     com_ray_sub = rospy.Subscriber("/com_ray", Float32, com_ray_callback)
     control_command_sub = rospy.Subscriber('/barrier_func_control_command', String,
             barrier_func_control_command_callback)
+    friction_parameter_sub = rospy.Subscriber('/friction_parameters', String, friction_parameter_callback)
 
     # setting up publisher for sliding
-    pivot_sliding_flag_pub = rospy.Publisher('/pivot_sliding_flag', Bool, 
+    pivot_sliding_commanded_flag_pub = rospy.Publisher('/pivot_sliding_commanded_flag', Bool, 
         queue_size=10)
-    pivot_sliding_flag_msg = Bool()
+    pivot_sliding_commanded_flag_msg = Bool()
 
     # publisher for qp debug message
     qp_debug_message_pub = rospy.Publisher('/qp_debug_message', String,
@@ -232,12 +241,18 @@ if __name__ == '__main__':
     rospy.sleep(1.0)
 
     target_pose_contact_frame, state_not_exists_bool, mode = None, True, None
+    theta_start = None
     state_not_exists_when_recieved_command = True
 
     coord_set = {}
 
     print('starting control loop')
     while not rospy.is_shutdown():
+
+        # snapshot of current friction parameter estimate
+        if friction_parameter_list:
+            while friction_parameter_list:
+                friction_parameter_dict = friction_parameter_list.pop(0)
 
         # snapshot of current generalized position estimate
         if generalized_positions is None:
@@ -289,8 +304,12 @@ if __name__ == '__main__':
                 coord_set = {'theta','xhand','zhand'}
             if mode == 5:
                 coord_set = {'xhand','zhand'}
-            if mode == 6:
+            if mode == 6 or mode == 9:
                 coord_set = {}
+            if mode == 7 or mode == 8:
+                coord_set = {'x_pivot'}
+            if mode == 10 or mode == 11:
+                coord_set = {'s', 'theta'}
 
             if command_flag == 0: # absolute move
 
@@ -313,6 +332,8 @@ if __name__ == '__main__':
                 # target pose
                 target_xyz_theta_robot_frame = copy.deepcopy(
                         starting_xyz_theta_robot_frame)
+
+                theta_start = target_xyz_theta_robot_frame[3]
 
                 if 'theta' in coord_set:
                     if current_msg["delta_theta"] == None:
@@ -341,11 +362,11 @@ if __name__ == '__main__':
 
             # publish if we intend to slide at pivot
             if mode == 2 or mode == 3:
-                pivot_sliding_flag = True
+                pivot_sliding_commanded_flag = True
             else:
-                pivot_sliding_flag = False
+                pivot_sliding_commanded_flag = False
 
-            pivot_sliding_flag_msg.data = pivot_sliding_flag
+            pivot_sliding_commanded_flag_msg.data = pivot_sliding_commanded_flag
 
         # compute error
 
@@ -372,7 +393,7 @@ if __name__ == '__main__':
 
                 delta_z = target_xyz_theta_robot_frame[2
                         ] - current_xyz_theta_robot_frame[2]
-                err_dict["err_s"] = delta_x * -np.cos(theta_target) + delta_z* np.sin(theta_target)
+                err_dict["err_s"] = delta_x * -np.cos(theta_start) + delta_z* np.sin(theta_start)
             if not state_not_exists_when_recieved_command:
                 err_dict["err_s"] = s_target - contact_pose[1]
         if 'x_pivot' in coord_set:
@@ -398,7 +419,8 @@ if __name__ == '__main__':
         # update controller
         pbc.update_controller(mode=mode, 
             theta_hand=contact_pose[2], 
-            contact_wrench=measured_contact_wrench, 
+            contact_wrench=measured_contact_wrench,
+            friction_parameter_dict=friction_parameter_dict,
             err_dict = err_dict,
             l_hand=contact_pose[0], 
             s_hand=contact_pose[1])
@@ -439,7 +461,7 @@ if __name__ == '__main__':
             frame_message)
         target_frame_pub.publish(frame_message)
         target_frame_broadcaster.sendTransform(frame_message)
-        pivot_sliding_flag_pub.publish(pivot_sliding_flag_msg)
+        pivot_sliding_commanded_flag_pub.publish(pivot_sliding_commanded_flag_msg)
         qp_debug_message_pub.publish(qp_debug_msg)
 
         rate.sleep()
