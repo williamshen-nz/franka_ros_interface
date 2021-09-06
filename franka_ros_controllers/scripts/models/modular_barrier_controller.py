@@ -585,7 +585,7 @@ class ModularBarrierController(object):
 
         if self.current_params['use_measured_mu_contact'] and measured_friction_available:
             aiq = np.array(self.friction_parameter_dict["acr"])
-            biq = self.friction_parameter_dict["bc"]-self.current_params['friction_margin']
+            biq = self.friction_parameter_dict["bcr"]-self.current_params['friction_margin']
         else:
             mu_c = self.current_params['mu_contact']
 
@@ -603,7 +603,7 @@ class ModularBarrierController(object):
 
         if self.current_params['use_measured_mu_contact'] and measured_friction_available:
             aiq = np.array(self.friction_parameter_dict["acl"])
-            biq = self.friction_parameter_dict["bc"]-self.current_params['friction_margin']
+            biq = self.friction_parameter_dict["bcl"]-self.current_params['friction_margin']
         else:
             mu_c = self.current_params['mu_contact']
 
@@ -654,7 +654,7 @@ class ModularBarrierController(object):
 
         if self.current_params['use_measured_mu_ground'] and measured_friction_available:
             aiq = np.dot(self.friction_parameter_dict["aer"], self.R2C)
-            biq = np.array(self.friction_parameter_dict["be"])-self.current_params['friction_ground_margin']
+            biq = np.array(self.friction_parameter_dict["ber"])-self.current_params['friction_ground_margin']
         else:
             mu_g = self.current_params['mu_ground']
             aiq = np.dot(np.array([-1., mu_g, 0.]), self.R2C)
@@ -670,7 +670,7 @@ class ModularBarrierController(object):
 
         if self.current_params['use_measured_mu_ground'] and measured_friction_available:
             aiq = np.dot(self.friction_parameter_dict["ael"], self.R2C)
-            biq = np.array(self.friction_parameter_dict["be"])-self.current_params['friction_ground_margin']
+            biq = np.array(self.friction_parameter_dict["bel"])-self.current_params['friction_ground_margin']
 
         else:
             mu_g = self.current_params['mu_ground']

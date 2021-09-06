@@ -9,9 +9,20 @@ class SystemParams(object):
             "MU_GROUND_0": None,                      # friction between obj/ground
             "MU_CONTACT_0": None,                     # friciton between robot/obj
             "TORQUE_BOUNDARY_MARGIN": 0.8,             # multiplies L_CONTACT to set conservative margin for torque boundary
-            "END_EFFECTOR_MASS": 0.193              # hand mass (kg)
+            "END_EFFECTOR_MASS": 0.193  ,            # hand mass (kg)
+
         }
 
+        self.ground_truth_params = {
+            "SHAPE_NAME": "triangle",
+            "THETA_GROUND": 0.0,
+            "GROUND_OFFSET": 0.0,
+            "GROUND_CONTACT_MARGIN": .003,
+            "ANGLE_THRESHOLD": np.pi/10,
+            "COLLISION_MARGIN": .008,
+            "APRIL_TAG_OFFSET": np.array([-.0055,-.003]),
+            "RATE": 100
+        }
 
         self.estimator_params = {
             "RATE": 100.,                           # hz
@@ -47,7 +58,7 @@ class SystemParams(object):
             "wrench_regularization_constant": 0.00001,
 
             "tr_friction": [0.5 , 3.],    # barrier function parameters for line/line plus point/line
-            "friction_margin": 0.,
+            "friction_margin": -1.,
             "mu_contact": .05,
             "use_measured_mu_contact": True,
 
@@ -56,7 +67,7 @@ class SystemParams(object):
             "l_contact_multiplier": .9,
             
             "tr_friction_external": [.9 , 1],
-            "friction_ground_margin": 0,
+            "friction_ground_margin": -1.,
             "mu_ground": .1,
             "use_measured_mu_ground": True,
 

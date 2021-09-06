@@ -117,28 +117,30 @@ if __name__ == '__main__':
                 friction_parameter_dict = friction_parameter_list.pop(0)
 
                 A_contact_right = np.array(friction_parameter_dict["acr"])
+                B_contact_right = friction_parameter_dict["bcr"]
                 A_contact_left = np.array(friction_parameter_dict["acl"])
-                B_contact = friction_parameter_dict["bc"]
-
+                B_contact_left = friction_parameter_dict["bcl"]
+                
                 A_external_right = np.array(friction_parameter_dict["aer"])
+                B_external_right = np.array(friction_parameter_dict["ber"])
                 A_external_left = np.array(friction_parameter_dict["ael"])
-                B_external = np.array(friction_parameter_dict["be"])
+                B_external_left = np.array(friction_parameter_dict["bel"])
 
-
-                P0_L =[A_contact_left[0]*B_contact,A_contact_left[1]*B_contact]
+                P0_L =[A_contact_left[0]*B_contact_left,A_contact_left[1]*B_contact_left]
                 contact_left_line_plot.set_ydata([P0_L[0]-100*A_contact_left[1],P0_L[0]+100*A_contact_left[1]])
                 contact_left_line_plot.set_xdata([P0_L[1]+100*A_contact_left[0],P0_L[1]-100*A_contact_left[0]])
 
-                P0_R =[A_contact_right[0]*B_contact,A_contact_right[1]*B_contact]
+                P0_R =[A_contact_right[0]*B_contact_right,A_contact_right[1]*B_contact_right]
                 contact_right_line_plot.set_ydata([P0_R[0]-100*A_contact_right[1],P0_R[0]+100*A_contact_right[1]])
                 contact_right_line_plot.set_xdata([P0_R[1]+100*A_contact_right[0],P0_R[1]-100*A_contact_right[0]])
 
-            for i in range(len(B_external)):
-                P0_L =[A_external_left[i][0]*B_external[i],A_external_left[i][1]*B_external[i]]
+            for i in range(len(B_external_left)):
+                P0_L =[A_external_left[i][0]*B_external_left[i],A_external_left[i][1]*B_external_left[i]]
                 external_left_line_plot_list[i].set_xdata([P0_L[0]-100*A_external_left[i][1],P0_L[0]+100*A_external_left[i][1]])
                 external_left_line_plot_list[i].set_ydata([P0_L[1]+100*A_external_left[i][0],P0_L[1]-100*A_external_left[i][0]])
 
-                P0_R =[A_external_right[i][0]*B_external[i],A_external_right[i][1]*B_external[i]]
+            for i in range(len(B_external_right)):
+                P0_R =[A_external_right[i][0]*B_external_right[i],A_external_right[i][1]*B_external_right[i]]
                 external_right_line_plot_list[i].set_xdata([P0_R[0]-100*A_external_right[i][1],P0_R[0]+100*A_external_right[i][1]])
                 external_right_line_plot_list[i].set_ydata([P0_R[1]+100*A_external_right[i][0],P0_R[1]-100*A_external_right[i][0]])
 

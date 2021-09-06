@@ -16,6 +16,9 @@ import matplotlib.lines as lines
 from livestats import livestats
 from models.system_params import SystemParams
 
+from convex_hull_estimator import ConvexHullEstimator
+from robot_friction_cone_estimator import RobotFrictionConeEstimator
+
 def end_effector_wrench_callback(data):
     global measured_contact_wrench_list
     end_effector_wrench = data
@@ -62,13 +65,6 @@ if __name__ == '__main__':
     end_effector_wrench_base_frame_sub = rospy.Subscriber("/end_effector_sensor_in_base_frame", 
         WrenchStamped,  end_effector_wrench_base_frame_callback)
 
-    sliding_state_pub = rospy.Publisher(
-        '/sliding_state', 
-        String,
-        queue_size=10)
-
-    sliding_state_msg = String()
-
     friction_parameter_pub = rospy.Publisher(
         '/friction_parameters', 
         String,
@@ -76,220 +72,76 @@ if __name__ == '__main__':
 
     friction_parameter_msg = String()
 
-    W_external_list = [0,-1,-5,-10]
-    theta_friction_external_list = [0,0,0,0]
-    num_external_params = len(W_external_list)
-    theta_friction_contact = 0
-    stats_external_list = []
-    point_offset_normal = 3
+    friction_parameter_dict = {}
 
-    A_contact_right = np.zeros([1,3])
-    A_contact_left = np.zeros([1,3])
-    B_contact = 0
-
-    A_external_right = np.zeros([num_external_params,3])
-    A_external_left = np.zeros([num_external_params,3])
-    B_external = np.zeros(num_external_params)
-
-    friction_parameter_dict = {
-        "acr": A_contact_right.tolist(),
-        "acl": A_contact_left.tolist(),
-        "bc": B_contact,
-        "cu": False,
-
-        "aer": A_external_right.tolist(),
-        "ael": A_external_left.tolist(),
-        "be": B_external.tolist(),
-        "eu": False 
-    }
+    num_divisions = 50
+    theta_range = 2*np.pi*(1.0*np.array(range(num_divisions)))/num_divisions
 
 
-    #parameters describing how close to the friction cone boundary you need to be
-    #to be considered sliding
-    contact_friction_cone_boundary_margin = 2
-    external_friction_cone_boundary_margin = 2
+    ground_hull_estimator = ConvexHullEstimator(theta_range=theta_range, quantile_value=.99, distance_threshold=.5, closed = False)
+    robot_friction_estimator = RobotFrictionConeEstimator(.95,3,theta_min_contact)
 
-    pivot_sliding_wrench_measured_flag = False 
-    pivot_sliding_left_wrench_measured_flag = False 
-    pivot_sliding_right_wrench_measured_flag = False
+    boundary_update_time = .2
+    last_update_time = time.time()
 
-    last_pivot_slide_left_time = -1
-    last_pivot_slide_right_time = -1 
+    should_publish_robot_friction_cone = False
+    should_publish_ground_friction_cone = False
 
-    contact_sliding_wrench_measured_flag = False 
-    contact_sliding_left_wrench_measured_flag = False 
-    contact_sliding_right_wrench_measured_flag = False 
-
-    last_contact_slide_left_time = -1
-    last_contact_slide_right_time = -1
-
-    reset_time_length = .25
-
-    sliding_state_dict = {
-        "psf": pivot_sliding_wrench_measured_flag,
-        "pslf": pivot_sliding_left_wrench_measured_flag,
-        "psrf": pivot_sliding_right_wrench_measured_flag,
-
-        "csf": contact_sliding_wrench_measured_flag,
-        "cslf": contact_sliding_left_wrench_measured_flag,
-        "csrf": contact_sliding_right_wrench_measured_flag
-    }
-
-
-    stats_contact = livestats.LiveStats([.995])
-    for i in range(num_external_params):
-       stats_external_list.append(livestats.LiveStats([.95]))
-
-    A_contact_right = np.array([-np.sin(theta_friction_contact), np.cos(theta_friction_contact),0])
-    A_contact_left  = np.array([-np.sin(theta_friction_contact),-np.cos(theta_friction_contact),0])
-
-    for i in range(num_external_params):
-        A_external_right[i][0] = -np.cos(theta_friction_external_list[i])
-        A_external_right[i][1] = np.sin(theta_friction_external_list[i])
-        
-        A_external_left[i][0] = np.cos(theta_friction_external_list[i])
-        A_external_left[i][1] = np.sin(theta_friction_external_list[i])
-
-        B_external[i] = -W_external_list[i]*np.sin(theta_friction_external_list[i])
+    print("Starting wrench cone estimation")
 
     while not rospy.is_shutdown():
 
-        update_and_publish = False
+        update_robot_friction_cone = False
+        update_ground_friction_cone = False
 
         if measured_contact_wrench_list:
-            update_and_publish = True
-
-            if time.time()-last_contact_slide_left_time>reset_time_length:
-                contact_sliding_left_wrench_measured_flag = False 
-            if time.time()-last_contact_slide_right_time>reset_time_length:
-                contact_sliding_right_wrench_measured_flag = False
+            update_robot_friction_cone = True
+            
 
             while measured_contact_wrench_list:
                 measured_contact_wrench = measured_contact_wrench_list.pop(0)
-                f_tangential = np.abs(measured_contact_wrench[1])
-                f_normal     =        measured_contact_wrench[0]
-
-                f_tangential_diff = f_tangential
-                f_normal_diff     = f_normal+point_offset_normal
-
-                stats_contact.add(min(np.arctan2(f_tangential_diff,f_normal_diff),np.pi/2))
-                theta_friction_contact=stats_contact.quantiles()[0][1]
-
-                if theta_friction_contact>theta_min_contact:
-                    friction_parameter_dict["cu"] = True
-
-                slide_right_bool = np.dot(A_contact_right,measured_contact_wrench) > B_contact - contact_friction_cone_boundary_margin
-                slide_left_bool = np.dot(A_contact_left,measured_contact_wrench) > B_contact - contact_friction_cone_boundary_margin
-
-                slide_right_bool = slide_right_bool.item()
-                slide_left_bool = slide_left_bool.item()
-                if slide_left_bool:
-                    last_contact_slide_left_time = time.time()
-
-                if slide_right_bool:
-                    last_contact_slide_right_time = time.time()
-
-
-                contact_sliding_right_wrench_measured_flag = contact_sliding_right_wrench_measured_flag or slide_right_bool
-                contact_sliding_left_wrench_measured_flag = contact_sliding_left_wrench_measured_flag or slide_left_bool
-
-            contact_sliding_wrench_measured_flag = contact_sliding_right_wrench_measured_flag or contact_sliding_left_wrench_measured_flag
-
-            # if contact_sliding_right_wrench_measured_flag and not contact_sliding_left_wrench_measured_flag:
-            #     print 'sliding right'
-            # if contact_sliding_left_wrench_measured_flag and not contact_sliding_right_wrench_measured_flag:
-            #     print 'sliding left'
-            # if contact_sliding_left_wrench_measured_flag and contact_sliding_right_wrench_measured_flag:
-            #     print 'not enough normal force'
-            # if not (contact_sliding_left_wrench_measured_flag or contact_sliding_right_wrench_measured_flag):
-            #     print 'sticking'
+                robot_friction_estimator.add_data_point(measured_contact_wrench)
                     
         if measured_base_wrench_list:
-
-            update_and_publish = True
-
-            if time.time()-last_pivot_slide_left_time>reset_time_length:
-                pivot_sliding_left_wrench_measured_flag = False 
-            if time.time()-last_pivot_slide_right_time>reset_time_length:
-                pivot_sliding_right_wrench_measured_flag = False
+            update_ground_friction_cone = True
+            
 
             while measured_base_wrench_list:
                 measured_base_wrench = measured_base_wrench_list.pop(0)
-                fx = np.abs(measured_base_wrench[0])
-                fy = -measured_base_wrench[1]
+                ground_hull_estimator.add_data_point(measured_base_wrench[[0,1]])
 
 
+        if update_robot_friction_cone:
+            robot_friction_estimator.update_estimator()
 
-                for i in range(num_external_params):
-                    x_diff = fx
-                    y_diff = fy-W_external_list[i]
-                    stats_external_list[i].add(min(np.arctan2(x_diff,y_diff),np.pi/2))
-                    theta_friction_external_list[i]=stats_external_list[i].quantiles()[0][1]
+            param_dict_contact = robot_friction_estimator.return_left_right_friction_dictionary()
+            friction_parameter_dict["acr"] = param_dict_contact["acr"]
+            friction_parameter_dict["acl"] = param_dict_contact["acl"]
+            friction_parameter_dict["bcr"] = param_dict_contact["bcr"]
+            friction_parameter_dict["bcl"] = param_dict_contact["bcl"]
+            friction_parameter_dict["cu"]  = param_dict_contact["cu"]
 
-                if all(np.array(theta_friction_external_list)>theta_min_contact):
-                    friction_parameter_dict["eu"] = True
+            should_publish_robot_friction_cone = True
 
-                slide_right_bool = any(np.dot(A_external_right,measured_base_wrench) > B_external - external_friction_cone_boundary_margin)
-                slide_left_bool = any(np.dot(A_external_left,measured_base_wrench) > B_external - external_friction_cone_boundary_margin)
+        if update_ground_friction_cone and time.time()- last_update_time> boundary_update_time:
+            ground_hull_estimator.generate_convex_hull_closed_polygon()
+
+            param_dict_ground = ground_hull_estimator.return_left_right_friction_dictionary()
+            friction_parameter_dict["aer"] = param_dict_ground["aer"]
+            friction_parameter_dict["ber"] = param_dict_ground["ber"]
+            friction_parameter_dict["ael"] = param_dict_ground["ael"]
+            friction_parameter_dict["bel"] = param_dict_ground["bel"]
+            friction_parameter_dict["eu"] = param_dict_ground["eu"]
+
+            should_publish_ground_friction_cone = True
 
 
-                if slide_left_bool:
-                    last_pivot_slide_left_time = time.time()
-
-                if slide_right_bool:
-                    last_pivot_slide_right_time = time.time()
-
-                pivot_sliding_right_wrench_measured_flag = pivot_sliding_right_wrench_measured_flag or slide_right_bool
-                pivot_sliding_left_wrench_measured_flag = pivot_sliding_left_wrench_measured_flag or slide_left_bool
-
-            pivot_sliding_wrench_measured_flag = pivot_sliding_right_wrench_measured_flag or pivot_sliding_left_wrench_measured_flag
-
-            # if pivot_sliding_right_wrench_measured_flag and not pivot_sliding_left_wrench_measured_flag:
-            #     print 'sliding right'
-            # if pivot_sliding_left_wrench_measured_flag and not pivot_sliding_right_wrench_measured_flag:
-            #     print 'sliding left'
-            # if pivot_sliding_left_wrench_measured_flag and pivot_sliding_right_wrench_measured_flag:
-            #     print 'not enough normal force'
-            # if not (pivot_sliding_left_wrench_measured_flag or pivot_sliding_right_wrench_measured_flag):
-            #     print 'sticking'
-
-        if update_and_publish:
-
-            A_contact_right = np.array([-np.sin(theta_friction_contact), np.cos(theta_friction_contact),0])
-            A_contact_left  = np.array([-np.sin(theta_friction_contact),-np.cos(theta_friction_contact),0])
-
-            for i in range(num_external_params):
-                A_external_right[i][0] = -np.cos(theta_friction_external_list[i])
-                A_external_right[i][1] = np.sin(theta_friction_external_list[i])
-                
-                A_external_left[i][0] = np.cos(theta_friction_external_list[i])
-                A_external_left[i][1] = np.sin(theta_friction_external_list[i])
-
-                B_external[i] = -W_external_list[i]*np.sin(theta_friction_external_list[i])
-
-            
-            sliding_state_dict["psf"]= pivot_sliding_wrench_measured_flag
-            sliding_state_dict["pslf"]= pivot_sliding_left_wrench_measured_flag
-            sliding_state_dict["psrf"]= pivot_sliding_right_wrench_measured_flag
-
-            sliding_state_dict["csf"]= contact_sliding_wrench_measured_flag
-            sliding_state_dict["cslf"]= contact_sliding_left_wrench_measured_flag
-            sliding_state_dict["csrf"]= contact_sliding_right_wrench_measured_flag
-
-            sliding_state_msg.data = json.dumps(sliding_state_dict)
-
-            friction_parameter_dict["acr"]= A_contact_right.tolist()
-            friction_parameter_dict["acl"]= A_contact_left.tolist()
-            friction_parameter_dict["bc"]= B_contact
-
-            friction_parameter_dict["aer"]= A_external_right.tolist()
-            friction_parameter_dict["ael"]= A_external_left.tolist()
-            friction_parameter_dict["be"]= B_external.tolist()
-
+        if should_publish_robot_friction_cone and should_publish_ground_friction_cone:
             friction_parameter_msg.data = json.dumps(friction_parameter_dict)
-
-            sliding_state_pub.publish(sliding_state_msg)
             friction_parameter_pub.publish(friction_parameter_msg)
+            should_publish_robot_friction_cone = False
+            should_publish_ground_friction_cone = False
+
 
 
 

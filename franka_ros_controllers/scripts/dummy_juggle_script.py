@@ -227,12 +227,12 @@ if __name__ == '__main__':
         "delta_zhand" : .00,
     }
 
-    command_msg_dict = absolute_rotate_right
+    #command_msg_dict = absolute_rotate_right
     #command_msg_dict = absolute_rotate_left
     #command_msg_dict = absolute_rotate_center
     #command_msg_dict = delta_rotate_left
     #command_msg_dict = delta_rotate_right
-    #command_msg_dict = delta_slide_robot_left
+    command_msg_dict = delta_slide_robot_left
     #command_msg_dict = delta_slide_robot_right
     #command_msg_dict = delta_slide_pivot_left
     #command_msg_dict = delta_slide_pivot_right

@@ -13,13 +13,13 @@ def gravity_torque_callback(data):
 if __name__ == '__main__':
 
     rospy.init_node("barrier_func_commands")
-    rate = rospy.Rate(0.1) # in yaml
+    rate = rospy.Rate(0.05) # in yaml
     rospy.sleep(1.0)
 
     command_msg = String()
 
     command_msg_dict = {
-        "theta" : np.pi/20,
+        "theta" : np.pi/15,
         "command_flag" : 0,
         "mode" : -1,
         "x_pivot" : 0.0,

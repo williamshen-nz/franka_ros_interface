@@ -110,7 +110,7 @@ def update_center_of_rotation_estimate(pose_list):
     return x0, z0, d
 
 
-def generate_upate_matrices(new_pose):
+def generate_update_matrices(new_pose):
     x = new_pose[0]
     z = new_pose[2]
 
@@ -255,7 +255,7 @@ if __name__ == '__main__':
             if num_data_points==0:
                 num_data_points+=1
                 hand_angle_at_recording=hand_angle
-                M1_update, M2_update = generate_upate_matrices(endpoint_pose_list)
+                M1_update, M2_update = generate_update_matrices(endpoint_pose_list)
                 M1 +=M1_update
                 M2 +=M2_update
 
@@ -299,7 +299,7 @@ if __name__ == '__main__':
 
                     num_data_points+=1
                     hand_angle_at_recording=hand_angle
-                    M1_update, M2_update = generate_upate_matrices(endpoint_pose_list)
+                    M1_update, M2_update = generate_update_matrices(endpoint_pose_list)
                     M1 +=M1_update
                     M2 +=M2_update
 

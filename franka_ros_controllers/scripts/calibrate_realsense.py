@@ -56,8 +56,6 @@ def rigid_transform_3D(A, B):
 
     return R, t, rmse
 
-
-
 def move_to_endpoint_pose(arm, endpoint_pose, 
     stiffness=[50, 50, 50, 10, 10, 10]):
     
@@ -93,11 +91,10 @@ if __name__ == '__main__':
     # Make listener
     listener = tf.TransformListener()
 
-
     # limits
-    xlim = [0.4, 0.6]
-    ylim = [-0.1, 0.25]
-    zlim = [0.08, 0.315]
+    xlim = [0.35, 0.65]
+    ylim = [-0.0, 0.2]
+    zlim = [0.08, 0.215]
 
     # number of segments
     nseg = 4
