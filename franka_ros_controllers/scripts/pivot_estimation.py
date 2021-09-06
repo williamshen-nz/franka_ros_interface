@@ -8,13 +8,14 @@ import tf2_ros
 import rospy
 import pdb
 import copy
+import json
 
 import ros_helper
 import franka_helper
 from franka_interface import ArmInterface 
 from geometry_msgs.msg import TransformStamped
 from visualization_msgs.msg import Marker
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 from models.system_params import SystemParams
 
 
@@ -168,6 +169,11 @@ def pivot_sliding_commanded_flag_callback(data):
     global pivot_sliding_commanded_boolean
     pivot_sliding_commanded_boolean = data.data
 
+def sliding_state_callback(data):
+    global sliding_measured_boolean
+    if data.data != '':
+        sliding_state_dict = json.loads(data.data) 
+        sliding_measured_boolean = sliding_state_dict['psf']
 
 if __name__ == '__main__':
 
@@ -183,10 +189,15 @@ if __name__ == '__main__':
     #hand_angle_all = []
 
     torque_boundary_boolean, pivot_sliding_commanded_boolean = None, None
+    sliding_measured_boolean = None
 
     # set up torque cone boundary subscriber
     torque_cone_boundary_test_sub = rospy.Subscriber("/torque_cone_boundary_test", 
         Bool,  torque_cone_boundary_test_callback)
+
+    # set up sliding state subscriber
+    sliding_state_sub = rospy.Subscriber("/sliding_state", String, 
+        sliding_state_callback)
 
     # set up pivot sliding flag
     pivot_sliding_commanded_flag_sub = rospy.Subscriber("/pivot_sliding_commanded_flag", 

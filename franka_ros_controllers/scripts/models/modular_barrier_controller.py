@@ -55,11 +55,13 @@ class ModularBarrierController(object):
             "constraint_normals": Aiq.tolist(),
             "constraint_offsets" : biq.tolist(),
             "slacks" : slacks.tolist(),
-            "measured_wrench" : self.contact_wrench.tolist()
+            "measured_wrench" : self.contact_wrench.tolist(),
+            "error_dict": self.err_dict,
         }
 
-        debug_str = json.dumps(debug_dict)
-        return debug_str
+        # debug_str = json.dumps(debug_dict)
+        # return debug_str
+        return debug_dict
 
 
     def build_quadratic_program_cost(self):

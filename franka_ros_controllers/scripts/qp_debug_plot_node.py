@@ -40,9 +40,7 @@ if __name__ == '__main__':
     axs[1].set_title('Torque Cone')
     axs[1].plot(measured_wrench[2], measured_wrench[0])
     axs[1].set_ylim([-10, 50])
-    axs[1].set_xlim([-5, 5])
-
-    
+    axs[1].set_xlim([-5, 5])    
 
     while not rospy.is_shutdown():
 

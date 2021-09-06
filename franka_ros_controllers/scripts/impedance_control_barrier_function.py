@@ -130,6 +130,7 @@ def friction_parameter_callback(data):
 
 def barrier_func_control_command_callback(data):
     global command_msg_queue
+    # print("hello")
     command_msg_queue.append(json.loads(data.data))
     if len(command_msg_queue) > 10:
         command_msg_queue.pop(0)
@@ -417,6 +418,7 @@ if __name__ == '__main__':
             measured_contact_wench_6D[-1]])
 
         # update controller
+        print("updating controller")
         pbc.update_controller(mode=mode, 
             theta_hand=contact_pose[2], 
             contact_wrench=measured_contact_wrench,
@@ -428,7 +430,14 @@ if __name__ == '__main__':
         # compute wrench increment 
 
         #try:
-        wrench_increment_contact, debug_str = pbc.solve_for_delta_wrench()
+        wrench_increment_contact, debug_dict = pbc.solve_for_delta_wrench()
+        debug_dict['snewrb'] = state_not_exists_when_recieved_command
+        if 'name' in current_msg:
+            print(current_msg['name'])
+            debug_dict['name'] = current_msg['name']
+        else:
+            debug_dict['name'] = ""
+        debug_str = json.dumps(debug_dict)
         qp_debug_msg.data = debug_str
         #except Exception as e:                
         #    print("couldn't find solution")
