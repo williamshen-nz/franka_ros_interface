@@ -268,7 +268,7 @@ if __name__ == '__main__':
                 diff_angle-= 2*np.pi
 
             # pivot is sliding
-            if pivot_sliding_commanded_boolean:
+            if pivot_sliding_commanded_boolean or sliding_measured_boolean:
                 if pivot_pose is not None and torque_boundary_boolean:
 
                     previous_loop_sliding = True
