@@ -113,19 +113,19 @@ if __name__ == '__main__':
 
     # choose variables
     delta_targets = {
-        'delta_sh_plus': 0.03,
-        'delta_sh_minus': -0.03, 
-        'delta_sg_plus': 0.1,
-        'delta_sg_minus': -0.1 
+        'delta_sh_plus': 0.01,
+        'delta_sh_minus': -0.01, 
+        'delta_sg_plus': 0.03,
+        'delta_sg_minus': -0.03 
     }
 
     absolute_targets =  {
         'theta_plus': np.pi/6,
         'theta_minus': -np.pi/6,
-        'theta_before_sh': np.pi/8,
+        'theta_before_sh': np.pi/12,
         # 'sh_plus': 0.03,
         # 'sh_minus': -0.03, 
-        'theta_before_sg': np.pi/4
+        'theta_before_sg': np.pi/6
         # 'sg_plus': 0.1,
         # 'sg_minus': -0.1, 
     }
@@ -141,7 +141,7 @@ if __name__ == '__main__':
     ]
 
     # sequence of primitives
-    primitive_name_seq = ["relative_slide_hand_pos", "relative_slide_hand_neg"]
+    primitive_name_seq = ["relative_slide_hand_neg", "relative_slide_hand_pos"]
     # primitive_name_seq = random.sample(all_primitives_names, 1)
 
     # build sequence of primitive dict commands from sequence of primitives
@@ -182,7 +182,7 @@ if __name__ == '__main__':
         if primitive_name == 'relative_slide_hand_pos':
 
             rotate_dict, slide_dict = relative_slide_hand_pos(
-                absolute_targets['theta_before_sh'],
+                -absolute_targets['theta_before_sh'],
                 delta_targets['delta_sh_plus'])
 
             primitive_dict_seq.extend([rotate_dict, slide_dict])

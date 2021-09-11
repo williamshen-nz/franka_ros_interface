@@ -144,6 +144,14 @@ if __name__ == '__main__':
                 external_right_line_plot_list[i].set_xdata([P0_R[0]-100*A_external_right[i][1],P0_R[0]+100*A_external_right[i][1]])
                 external_right_line_plot_list[i].set_ydata([P0_R[1]+100*A_external_right[i][0],P0_R[1]-100*A_external_right[i][0]])
 
+            for i in range(len(B_external_left),num_external_params):
+                external_left_line_plot_list[i].set_xdata([0])
+                external_left_line_plot_list[i].set_ydata([0])
+
+            for i in range(len(B_external_right),num_external_params):
+                external_right_line_plot_list[i].set_xdata([0])
+                external_right_line_plot_list[i].set_ydata([0])
+
        
 
         axs[0].set_xlim([-30, 30])

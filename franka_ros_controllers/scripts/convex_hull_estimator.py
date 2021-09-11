@@ -472,7 +472,8 @@ class ConvexHullEstimator(object):
             "ber": self.B_right.tolist(),
             "ael": np.hstack([self.A_left,np.zeros([len(self.A_left),1])]).tolist(),
             "bel": self.B_left.tolist(),
-            "eu": (len(self.B_right)>0) and (len(self.B_left)>0) 
+            "elu": (len(self.B_left)>0),
+            "eru": (len(self.B_right)>0)
             }
     def return_polygon_representation_dictionary(self):
         return {

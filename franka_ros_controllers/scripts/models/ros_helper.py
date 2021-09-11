@@ -200,7 +200,7 @@ def initialize_rosbag(topics, exp_name='test'):
     import datetime
     import subprocess
     #Saving rosbag options
-    name_of_bag  = str(datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")) + '_' + exp_name
+    name_of_bag  = str(datetime.datetime.now().strftime("%Y-%m-%d-%H-%M-%S")) + '-' + exp_name
     dir_save_bagfile = os.environ['CODE_BASE'] + '/data/rosbag_data/'
     rosbag_proc = subprocess.Popen('rosbag record -q -O %s %s' % (name_of_bag, " ".join(topics)) , shell=True, cwd=dir_save_bagfile)
 

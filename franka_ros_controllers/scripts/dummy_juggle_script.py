@@ -18,7 +18,7 @@ if __name__ == '__main__':
     delta_rotate_left = {
         "command_flag" : 1,
         "mode" : -1,
-        "delta_theta" : np.pi/10,
+        "delta_theta" : np.pi/20,
         "delta_x_pivot" : 0.0,
         "delta_s" : 0.0,
     }
@@ -26,7 +26,7 @@ if __name__ == '__main__':
     delta_rotate_right = {
         "command_flag" : 1,
         "mode" : -1,
-        "delta_theta" : -np.pi/10,
+        "delta_theta" : -np.pi/20,
         "delta_x_pivot" : 0.0,
         "delta_s" : 0.0,
     }
@@ -54,7 +54,7 @@ if __name__ == '__main__':
         "command_flag" : 1,
         "mode" : 2,
         "delta_theta" : 0,
-        "delta_x_pivot" : 0.06,
+        "delta_x_pivot" : 0.01,
         "delta_s" : 0.00,
     }
 
@@ -63,7 +63,7 @@ if __name__ == '__main__':
         "command_flag" : 1,
         "mode" : 3,
         "delta_theta" : 0,
-        "delta_x_pivot" :- 0.06,
+        "delta_x_pivot" : -0.01,
         "delta_s" : 0.00,
     }
 
@@ -158,7 +158,7 @@ if __name__ == '__main__':
         "name": "absolute_rotate_left",
         "command_flag" : 0,
         "mode" : -1,
-        "theta" : np.pi/7, #np.pi/6+np.pi/20,
+        "theta" : np.pi/16, #np.pi/6+np.pi/20,
         "x_pivot" : 0.0,
         "s" : 0.0,
     }
@@ -167,7 +167,7 @@ if __name__ == '__main__':
         "name": "absolute_rotate_right",
         "command_flag" : 0,
         "mode" : -1,
-        "theta" : -np.pi/7, #np.pi/6-np.pi/20,
+        "theta" : -np.pi/16, #np.pi/6-np.pi/20,
         "x_pivot" : 0.0,
         "s" : 0.0,
     }
@@ -227,12 +227,12 @@ if __name__ == '__main__':
         "delta_zhand" : .00,
     }
 
-    #command_msg_dict = absolute_rotate_right
+    # command_msg_dict = absolute_rotate_right
     #command_msg_dict = absolute_rotate_left
-    #command_msg_dict = absolute_rotate_center
+    command_msg_dict = absolute_rotate_center
     #command_msg_dict = delta_rotate_left
     #command_msg_dict = delta_rotate_right
-    command_msg_dict = delta_slide_robot_left
+    #command_msg_dict = delta_slide_robot_left
     #command_msg_dict = delta_slide_robot_right
     #command_msg_dict = delta_slide_pivot_left
     #command_msg_dict = delta_slide_pivot_right

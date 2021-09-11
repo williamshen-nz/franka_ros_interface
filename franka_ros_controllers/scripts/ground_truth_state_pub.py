@@ -78,7 +78,7 @@ def get_orientation_in_base(contact_pose_homog):
     return -np.arctan2(hand_normal_x, -hand_normal_z)
 
 def load_shape_data(name_in):
-    f = open("./models/shape_description/"+name_in+".json")
+    f = open("/home/mcube/Documents/panda/base_ws/src/franka_ros_interface/franka_ros_controllers/scripts/models/shape_description/"+name_in+".json")
     shape_data = json.load(f)
 
     vertex_array = np.array([shape_data["x_vert"],shape_data["y_vert"]])
@@ -104,7 +104,8 @@ if __name__ == '__main__':
     object_detected = None
 
     shape_name = sys_params.ground_truth_params["SHAPE_NAME"]
-    object_vertex_array, apriltag_id ,apriltag_pos = load_shape_data(shape_name)
+    print(shape_name.split('-')[0])
+    object_vertex_array, apriltag_id ,apriltag_pos = load_shape_data(shape_name.split('-')[0])
 
     rospy.init_node("ground_truth_testing")
     rospy.sleep(1.0)
@@ -170,7 +171,7 @@ if __name__ == '__main__':
             "hp": hand_pose.tolist(),
             "op": object_pose.tolist(),
             "atid": apriltag_id,
-            "sq": my_ground_truth.compute_object_s(),
+            "sq": my_ground_truth.compute_object_s().tolist(),
             "sg": my_ground_truth.compute_ground_s().tolist(),
             "tht_o": my_ground_truth.compute_object_theta(),
             "tht_h": -hand_pose[2],

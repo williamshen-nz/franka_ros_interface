@@ -109,6 +109,7 @@ if __name__ == '__main__':
             while measured_base_wrench_list:
                 measured_base_wrench = measured_base_wrench_list.pop(0)
                 ground_hull_estimator.add_data_point(measured_base_wrench[[0,1]])
+                ground_hull_estimator.add_data_point([-measured_base_wrench[0],measured_base_wrench[1]])
 
 
         if update_robot_friction_cone:
@@ -131,7 +132,8 @@ if __name__ == '__main__':
             friction_parameter_dict["ber"] = param_dict_ground["ber"]
             friction_parameter_dict["ael"] = param_dict_ground["ael"]
             friction_parameter_dict["bel"] = param_dict_ground["bel"]
-            friction_parameter_dict["eu"] = param_dict_ground["eu"]
+            friction_parameter_dict["elu"] = param_dict_ground["elu"]
+            friction_parameter_dict["eru"] = param_dict_ground["eru"]
 
             should_publish_ground_friction_cone = True
 

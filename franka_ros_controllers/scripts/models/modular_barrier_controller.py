@@ -158,6 +158,7 @@ class ModularBarrierController(object):
             mode = 9
         if mode == 11 and err_dict["err_s"] > 0:
             mode = 9
+        
 
 
         
@@ -451,8 +452,14 @@ class ModularBarrierController(object):
     def slide_right_robot_cost(self):
         ''' cost term for sliding right at robot '''
         self.compute_error_s()
-        if self.current_params['use_measured_mu_contact'] and (self.pbal_helper.mu_contact is not None):
-            mu_c = self.pbal_helper.mu_contact
+
+        measured_friction_available = False
+        if (self.friction_parameter_dict is not None):
+            measured_friction_available = self.friction_parameter_dict["cu"]
+            aiq = np.array(self.friction_parameter_dict["acr"])
+
+        if self.current_params['use_measured_mu_contact'] and measured_friction_available:
+            mu_c = np.abs(aiq[0]/aiq[1])
         else:
             mu_c = self.current_params['mu_contact']
 
@@ -465,8 +472,15 @@ class ModularBarrierController(object):
     def slide_left_robot_cost(self):
         ''' cost term for sliding left at robot '''
         self.compute_error_s()
-        if self.current_params['use_measured_mu_contact'] and (self.pbal_helper.mu_contact is not None):
-            mu_c = self.pbal_helper.mu_contact
+
+        measured_friction_available = False
+        if (self.friction_parameter_dict is not None):
+            measured_friction_available = self.friction_parameter_dict["cu"]
+            aiq = np.array(self.friction_parameter_dict["acl"])
+          
+        if self.current_params['use_measured_mu_contact'] and measured_friction_available:
+            mu_c = np.abs(aiq[0]/aiq[1])
+
         else:
             mu_c = self.current_params['mu_contact']
 
@@ -563,7 +577,7 @@ class ModularBarrierController(object):
             if self.current_params['pure_agnostic_rotation'] == True:
                 base_vec = np.array([0., 0., 1.])
             else: 
-                base_vec = np.array([0., -.01, 1.])
+                base_vec = np.array([0., -.06, 1.])
         else:
             base_vec = np.array([-self.s_hand, self.l_hand, 1.])
         return self.general_cost(
@@ -592,7 +606,8 @@ class ModularBarrierController(object):
             mu_c = self.current_params['mu_contact']
 
             aiq = np.array([-mu_c, 1., 0.])/np.sqrt(1 + mu_c ** 2)
-            biq = -self.current_params['friction_margin']
+            # biq = -self.current_params['friction_margin']
+            biq = 0.0
 
         return aiq, biq, self.current_params['tr_friction']
 
@@ -610,7 +625,8 @@ class ModularBarrierController(object):
             mu_c = self.current_params['mu_contact']
 
             aiq = np.array([-mu_c, -1., 0.])/np.sqrt(1 + mu_c ** 2)
-            biq = -self.current_params['friction_margin']
+            # biq = -self.current_params['friction_margin']
+            biq = 0.0
 
         return aiq, biq, self.current_params['tr_friction']
 
@@ -652,31 +668,36 @@ class ModularBarrierController(object):
         ''' right (i.e., positive) boundary of friction cone '''
         measured_friction_available = False
         if (self.friction_parameter_dict is not None):
-            measured_friction_available = self.friction_parameter_dict["eu"]
+            measured_friction_available = self.friction_parameter_dict["eru"]
 
         if self.current_params['use_measured_mu_ground'] and measured_friction_available:
             aiq = np.dot(self.friction_parameter_dict["aer"], self.R2C)
             biq = np.array(self.friction_parameter_dict["ber"])-self.current_params['friction_ground_margin']
+            # print 'num_friction_right= ', len(biq)
         else:
             mu_g = self.current_params['mu_ground']
             aiq = np.dot(np.array([-1., mu_g, 0.]), self.R2C)
-            biq = -self.current_params['friction_ground_margin']
+            # biq = -self.current_params['friction_ground_margin']
+            biq = 0.0
+            # print 'using default friction'
 
         return aiq, biq, self.current_params['tr_friction_external']
 
     def friction_left_external_constraint(self):
-        ''' left (i.e., positive) boundary of friction cone '''
+        ''' left (i.e., negative) boundary of friction cone '''
         measured_friction_available = False
         if (self.friction_parameter_dict is not None):
-            measured_friction_available = self.friction_parameter_dict["eu"]
+            measured_friction_available = self.friction_parameter_dict["elu"]
 
         if self.current_params['use_measured_mu_ground'] and measured_friction_available:
             aiq = np.dot(self.friction_parameter_dict["ael"], self.R2C)
             biq = np.array(self.friction_parameter_dict["bel"])-self.current_params['friction_ground_margin']
-
+            # print 'num_friction_left= ', len(biq)
         else:
             mu_g = self.current_params['mu_ground']
             aiq = np.dot(np.array([1., mu_g, 0.]), self.R2C)
-            biq = -self.current_params['friction_ground_margin']
+            # biq = -self.current_params['friction_ground_margin']
+            biq = 0.0
+            # print 'using default friction'
 
         return aiq, biq, self.current_params['tr_friction_external']

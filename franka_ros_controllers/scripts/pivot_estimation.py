@@ -290,6 +290,20 @@ if __name__ == '__main__':
                     pivot_pose = ros_helper.list2pose_stamped(
                         pivot_xyz + [0,0,0,1])
 
+                else:
+                    if pivot_pose is None:
+                        x0=None
+                        z0=None
+                        pivot_xyz=None
+                        pivot_xyz_sticking = None
+                        pivot_pose=None
+                        d=None
+                        hand_angle_at_recording=None
+                        num_data_points = 0
+
+                        M1 = np.zeros([3,3])
+                        M2 = np.zeros([1,3])
+
             else:
 
                 if previous_loop_sliding and (pivot_xyz_sticking is not None):

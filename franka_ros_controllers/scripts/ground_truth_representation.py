@@ -407,11 +407,15 @@ class GroundTruthRepresentation(object):
     def compute_object_s(self):
         if self.object_on_hand_face is not None:
             hand_center = .5*self.hand_polygon.vertex_array_world[:,0] + .5*self.hand_polygon.vertex_array_world[:,1]
-            return -self.object_polygon.compute_s_contact_world(X_world=hand_center,
+
+            s_list = []
+            for pivot_index in self.object_on_ground_vertices:
+                s_list.append(-self.object_polygon.compute_s_contact_world(X_world=hand_center,
                 face_index=self.object_on_hand_face,
-                pivot_index=self.object_on_ground_vertices[0])
+                pivot_index=pivot_index))
+            return np.array(s_list)
         else:
-            return None
+            return np.array([])
 
     def compute_pivot_positions(self):
         return self.object_polygon.vertex_array_world[:,self.object_on_ground_vertices]
