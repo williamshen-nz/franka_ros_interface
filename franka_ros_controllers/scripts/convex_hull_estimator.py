@@ -25,6 +25,7 @@ solvers.options['feastol'] = 1e-6
 
 class ConvexHullEstimator(object):
     def __init__(self, theta_range,quantile_value,distance_threshold=.5,closed=False):
+        self.curvature_threshold = 0.0
         self.closed=closed
         self.theta_range=theta_range
         self.num_external_params = len(self.theta_range)
@@ -150,6 +151,7 @@ class ConvexHullEstimator(object):
         return np.array(vertex_x_list),np.array(vertex_y_list)
 
     def prune_vetices_by_curvature(self,vertex_x_list_in,vertex_y_list_in):
+
         theta_list, A, B = self.vertices_to_theta_and_offset(
                 vertex_x_list_in,vertex_y_list_in,closed=True)
 
@@ -186,7 +188,7 @@ class ConvexHullEstimator(object):
         index_select_list = []
         for i in range(1,len(slope_list)-1):
             if slope_list[i]>slope_list[i-1] and slope_list[i]>slope_list[i+1] and (
-                theta_middle_list[i]>=np.pi and theta_middle_list[i]<3*np.pi and slope_list[i]>0):
+                theta_middle_list[i]>=np.pi and theta_middle_list[i]<3*np.pi and slope_list[i]>self.curvature_threshold):
                 theta_select_list.append(theta_middle_list[i])
                 slope_select_list.append(slope_list[i])
                 index_select_list.append(np.mod(i+1,len(theta_list)))
@@ -269,9 +271,11 @@ class ConvexHullEstimator(object):
                 theta_list[i]=theta_list[i]+2*np.pi
 
             if theta_list[i]>=np.pi/2 and theta_list[i]<np.pi:
+            # if theta_list[i]>=np.pi/2 and theta_list[i]<=3*np.pi/2:
                 A1 = np.vstack([A1,A[i]])
                 B1 = np.hstack([B1,B[i]])
             if theta_list[i]<np.pi/2 and theta_list[i]>0:
+            # if theta_list[i]<np.pi/2 and theta_list[i]>=-np.pi/2:
                 A2 = np.vstack([A2,A[i]])
                 B2 = np.hstack([B2,B[i]])
 
@@ -339,7 +343,7 @@ class ConvexHullEstimator(object):
         self.exterior_polygon_plot_C, = axis_in.plot([0], [0], 'k',linewidth=3)
         self.star_plot_A, = axis_in.plot([0], [0], 'b',linewidth=3)
         self.star_plot_B, = axis_in.plot([0], [0], 'b',linewidth=3)
-        self.final_polygon_plot_A, = axis_in.plot([0], [0], 'g',linewidth=3)
+        #self.final_polygon_plot_A, = axis_in.plot([0], [0], 'g',linewidth=3)
 
     def update_polygon_star_plot(self):
         if len(self.final_polygon_vertex_x_list)>0:
@@ -349,32 +353,32 @@ class ConvexHullEstimator(object):
                 self.exterior_polygon_plot_C.set_ydata(np.hstack([self.exterior_polygon_vertex_y_list,
                     self.exterior_polygon_vertex_y_list[0]]))
 
-                self.star_plot_A.set_xdata(np.hstack([self.star_vertex_x_list_A,
-                    self.star_vertex_x_list_A[0]]))
-                self.star_plot_A.set_ydata(np.hstack([self.star_vertex_y_list_A,
-                    self.star_vertex_y_list_A[0]]))
+                # self.star_plot_A.set_xdata(np.hstack([self.star_vertex_x_list_A,
+                #     self.star_vertex_x_list_A[0]]))
+                # self.star_plot_A.set_ydata(np.hstack([self.star_vertex_y_list_A,
+                #     self.star_vertex_y_list_A[0]]))
 
                 self.star_plot_B.set_xdata(np.hstack([self.star_vertex_x_list_B,
                     self.star_vertex_x_list_B[0]]))
                 self.star_plot_B.set_ydata(np.hstack([self.star_vertex_y_list_B,
                     self.star_vertex_y_list_B[0]]))
 
-                self.final_polygon_plot_A.set_xdata(np.hstack([self.final_polygon_vertex_x_list,
-                    self.final_polygon_vertex_x_list[0]]))
-                self.final_polygon_plot_A.set_ydata(np.hstack([self.final_polygon_vertex_y_list,
-                    self.final_polygon_vertex_y_list[0]]))
+                # self.final_polygon_plot_A.set_xdata(np.hstack([self.final_polygon_vertex_x_list,
+                #     self.final_polygon_vertex_x_list[0]]))
+                # self.final_polygon_plot_A.set_ydata(np.hstack([self.final_polygon_vertex_y_list,
+                #     self.final_polygon_vertex_y_list[0]]))
             else:
                 self.exterior_polygon_plot_C.set_xdata(self.exterior_polygon_vertex_x_list)
                 self.exterior_polygon_plot_C.set_ydata(self.exterior_polygon_vertex_y_list)
 
-                self.star_plot_A.set_xdata(self.star_vertex_x_list_A)
-                self.star_plot_A.set_ydata(self.star_vertex_y_list_A)
+                # self.star_plot_A.set_xdata(self.star_vertex_x_list_A)
+                # self.star_plot_A.set_ydata(self.star_vertex_y_list_A)
 
                 self.star_plot_B.set_xdata(self.star_vertex_x_list_B)
                 self.star_plot_B.set_ydata(self.star_vertex_y_list_B)
 
-                self.final_polygon_plot_A.set_xdata(self.final_polygon_vertex_x_list)
-                self.final_polygon_plot_A.set_ydata(self.final_polygon_vertex_y_list)
+                # self.final_polygon_plot_A.set_xdata(self.final_polygon_vertex_x_list)
+                # self.final_polygon_plot_A.set_ydata(self.final_polygon_vertex_y_list)
 
     #final polygon and corresponding constraints
     def initialize_final_constraint_plot(self,axis_in):

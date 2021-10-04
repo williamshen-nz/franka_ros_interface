@@ -63,12 +63,14 @@ if __name__ == '__main__':
             ax.clear()
 
         for i in range(len(constraint_offsets)):
+            constraint_plotted = False
 
             Aiq = constraint_normals[i]
             biq = constraint_offsets[i]
             slacki = slacks[i]
 
             if np.abs(Aiq[2])<.0001:
+                constraint_plotted = True
 
                 alpha = slacki/(Aiq[0]**2+Aiq[1]**2)
                 axs[0].plot(
@@ -84,6 +86,7 @@ if __name__ == '__main__':
 
 
             if np.abs(Aiq[1])<.0001:
+                constraint_plotted = True
 
                 alpha = slacki/(Aiq[0]**2+Aiq[2]**2)
                 axs[1].plot(
@@ -95,6 +98,9 @@ if __name__ == '__main__':
                 axs[1].plot(
                     [Aiq[2]*alpha+100.*Aiq[0], Aiq[2]*alpha-100.*Aiq[0]], 
                     [Aiq[0]*alpha-100.*Aiq[2], Aiq[0]*alpha+100.*Aiq[2]], 'm')
+
+            if not constraint_plotted:
+                print 'constraint not plotted: ', Aiq, "  ", biq
 
         for i in range(len(error_list)):
             proj_veci = proj_vec_list[i]

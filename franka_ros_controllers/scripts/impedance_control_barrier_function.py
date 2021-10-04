@@ -135,8 +135,6 @@ def barrier_func_control_command_callback(data):
     if len(command_msg_queue) > 10:
         command_msg_queue.pop(0)
 
-
-
 if __name__ == '__main__':
 
     # load params

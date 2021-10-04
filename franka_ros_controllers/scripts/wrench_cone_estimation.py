@@ -73,8 +73,14 @@ if __name__ == '__main__':
     friction_parameter_msg = String()
 
     friction_parameter_dict = {}
+    friction_parameter_dict["aer"] = []
+    friction_parameter_dict["ber"] = []
+    friction_parameter_dict["ael"] = []
+    friction_parameter_dict["bel"] = []
+    friction_parameter_dict["elu"] = []
+    friction_parameter_dict["eru"] = []
 
-    num_divisions = 50
+    num_divisions = 64
     theta_range = 2*np.pi*(1.0*np.array(range(num_divisions)))/num_divisions
 
 
@@ -109,8 +115,8 @@ if __name__ == '__main__':
             while measured_base_wrench_list:
                 measured_base_wrench = measured_base_wrench_list.pop(0)
                 ground_hull_estimator.add_data_point(measured_base_wrench[[0,1]])
-                ground_hull_estimator.add_data_point([-measured_base_wrench[0],measured_base_wrench[1]])
-
+                ground_hull_estimator.add_data_point(np.array([-measured_base_wrench[0],measured_base_wrench[1]]))
+                ground_hull_estimator.add_data_point(np.array([0,0]))
 
         if update_robot_friction_cone:
             robot_friction_estimator.update_estimator()
@@ -128,12 +134,16 @@ if __name__ == '__main__':
             ground_hull_estimator.generate_convex_hull_closed_polygon()
 
             param_dict_ground = ground_hull_estimator.return_left_right_friction_dictionary()
-            friction_parameter_dict["aer"] = param_dict_ground["aer"]
-            friction_parameter_dict["ber"] = param_dict_ground["ber"]
-            friction_parameter_dict["ael"] = param_dict_ground["ael"]
-            friction_parameter_dict["bel"] = param_dict_ground["bel"]
-            friction_parameter_dict["elu"] = param_dict_ground["elu"]
-            friction_parameter_dict["eru"] = param_dict_ground["eru"]
+
+            if param_dict_ground["elu"]:
+                friction_parameter_dict["ael"] = param_dict_ground["ael"]
+                friction_parameter_dict["bel"] = param_dict_ground["bel"]
+                friction_parameter_dict["elu"] = param_dict_ground["elu"]
+
+            if param_dict_ground["eru"]:
+                friction_parameter_dict["aer"] = param_dict_ground["aer"]
+                friction_parameter_dict["ber"] = param_dict_ground["ber"]
+                friction_parameter_dict["eru"] = param_dict_ground["eru"]
 
             should_publish_ground_friction_cone = True
 

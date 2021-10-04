@@ -14,7 +14,7 @@ class SystemParams(object):
         }
 
         self.ground_truth_params = {
-            "SHAPE_NAME": "triangle-with-mass",
+            "SHAPE_NAME": "triangle-no-mass",
             "THETA_GROUND": 0.0,
             "GROUND_OFFSET": 0.0,
             "GROUND_CONTACT_MARGIN": .003,
@@ -67,12 +67,12 @@ class SystemParams(object):
             "l_contact_multiplier": .95, #.9
             
             "tr_friction_external": [.9 , 1],
-            "friction_ground_margin": .4, #.8
+            "friction_ground_margin": .6, #.4, #.8
             "mu_ground": .3, # .2,
             "use_measured_mu_ground": True,
 
             "tr_max_normal_contact": [.3, 3.],
-            "Nmax_contact": 35.,
+            "Nmax_contact": 20., #35
 
             "tr_min_normal_external": [1., 1]                   
         }
