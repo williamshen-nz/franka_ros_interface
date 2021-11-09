@@ -158,7 +158,7 @@ if __name__ == '__main__':
         "name": "absolute_rotate_left",
         "command_flag" : 0,
         "mode" : -1,
-        "theta" : np.pi/16, #np.pi/6+np.pi/20,
+        "theta" : np.pi/10, #np.pi/6+np.pi/20,
         "x_pivot" : 0.0,
         "s" : 0.0,
     }
@@ -167,7 +167,7 @@ if __name__ == '__main__':
         "name": "absolute_rotate_right",
         "command_flag" : 0,
         "mode" : -1,
-        "theta" : -np.pi/16, #np.pi/6-np.pi/20,
+        "theta" : -np.pi/10, #np.pi/6-np.pi/20,
         "x_pivot" : 0.0,
         "s" : 0.0,
     }
@@ -275,6 +275,11 @@ if __name__ == '__main__':
     # ]
 
 
+    message_queue= [
+       absolute_rotate_left,
+       absolute_rotate_right
+    ]
+
     #command_msg_dict = delta_flush_static
 
     command_msg_string = json.dumps(command_msg_dict)
@@ -297,16 +302,16 @@ if __name__ == '__main__':
             control_command_pub.publish(command_msg)
             published = True
 
-    # time.sleep(3)
-
-    # while True:
-    #     for message in message_queue:
-    #        #print(message["name"])
-    #        command_msg_dict = message
-    #        command_msg_string = json.dumps(command_msg_dict)
-    #        command_msg.data = command_msg_string
-    #        control_command_pub.publish(command_msg)
-    #        time.sleep(5)
+    time.sleep(3)
+    print 'hello!'
+    while True:
+        for message in message_queue:
+           #print(message["name"])
+           command_msg_dict = message
+           command_msg_string = json.dumps(command_msg_dict)
+           command_msg.data = command_msg_string
+           control_command_pub.publish(command_msg)
+           time.sleep(40)
 
     # command_msg_dict = absolute_rotate_center
     # # command_msg_dict_pruned = prune_command_message(command_msg_dict)

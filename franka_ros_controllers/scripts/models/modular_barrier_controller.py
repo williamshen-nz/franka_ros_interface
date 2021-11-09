@@ -26,7 +26,7 @@ class ModularBarrierController(object):
     def solve_for_delta_wrench(self):
         P, q, proj_vec_list, error_list = \
             self.build_quadratic_program_cost()
-        Aiq, biq, slacks = self.build_quadratic_program_constraints()
+        Aiq, biq, slacks, label_list_cnstr = self.build_quadratic_program_constraints()
 
         try:
             delta_wrench =  self.solve_quadratic_program(P, q, Aiq, slacks)
@@ -39,12 +39,12 @@ class ModularBarrierController(object):
         #delta_wrench =  self.solve_quadratic_program(P, q, Aiq, slacks)
         delta_wrench_unconstrained = np.linalg.solve(2*P, -q) 
         debug_str = self.build_debug_string(delta_wrench, delta_wrench_unconstrained, 
-            proj_vec_list, error_list, Aiq, biq, slacks)
+            proj_vec_list, error_list, Aiq, biq, slacks, label_list_cnstr)
         return delta_wrench, debug_str
 
 
     def build_debug_string(self, delta_wrench, delta_wrench_unconstrained,
-        proj_vec_list, error_list, Aiq, biq, slacks):
+        proj_vec_list, error_list, Aiq, biq, slacks, label_list_cnstr):
 
         debug_dict = {
             "mode" : self.mode,
@@ -57,6 +57,7 @@ class ModularBarrierController(object):
             "slacks" : slacks.tolist(),
             "measured_wrench" : self.contact_wrench.tolist(),
             "error_dict": self.err_dict,
+            "label_list_cnstr": label_list_cnstr,
         }
 
         # debug_str = json.dumps(debug_dict)
@@ -79,10 +80,12 @@ class ModularBarrierController(object):
 
     def build_quadratic_program_constraints(self):
 
-        Aiq, biq, trust_region, slacks, slack_product = [], [], [], [], []
+        Aiq, biq, trust_region, slacks, slack_product, label_list = [], [], [], [], [], []
 
         for constraint in self.mode_constraint:
-            aiqi, biqi, tri = constraint()
+            aiqi, biqi, tri, labels = constraint()
+
+            label_list = label_list + labels
 
             if aiqi.ndim == 1:
                 Aiq.append(aiqi)
@@ -117,7 +120,7 @@ class ModularBarrierController(object):
                     slack_product.append(slack_producti)
 
         return np.array(Aiq), np.array(biq
-            ), np.array(slack_product)
+            ), np.array(slack_product), label_list
 
     def solve_quadratic_program(self, P, q, Aiq, biq):
         
@@ -609,7 +612,7 @@ class ModularBarrierController(object):
             # biq = -self.current_params['friction_margin']
             biq = 0.0
 
-        return aiq, biq, self.current_params['tr_friction']
+        return aiq, biq, self.current_params['tr_friction'], ['frc']
 
     def friction_left_contact_constraint(self):
         ''' left (i.e., negative) boundary of friction cone '''
@@ -628,41 +631,41 @@ class ModularBarrierController(object):
             # biq = -self.current_params['friction_margin']
             biq = 0.0
 
-        return aiq, biq, self.current_params['tr_friction']
+        return aiq, biq, self.current_params['tr_friction'], ['flc']
 
     def torque_right_contact_constraint(self):
         ''' right (i.e., positive) boundary of torque cone '''
         lc = self.pbal_helper.l_contact * self.current_params['l_contact_multiplier']
         aiq = np.array([-lc / 2., 0., 1.])
         biq = -self.current_params['torque_margin']
-        return aiq, biq, self.current_params['tr_torque']
+        return aiq, biq, self.current_params['tr_torque'], ['trc']
 
     def torque_left_contact_constraint(self):
         ''' left (i.e., negative) boundary of torque cone '''
         lc = self.pbal_helper.l_contact * self.current_params['l_contact_multiplier']
         aiq = np.array([-lc / 2., 0., -1.])
         biq = -self.current_params['torque_margin']
-        return aiq, biq, self.current_params['tr_torque']
+        return aiq, biq, self.current_params['tr_torque'], ['flc']
 
     def normal_force_max_contact_constraint(self):
         ''' maximum applied normal force at contact constraint '''
         Nm = self.current_params['Nmax_contact']
         aiq = np.array([1., 0., 0.])
         biq = Nm
-        return aiq, biq, self.current_params['tr_max_normal_contact']
+        return aiq, biq, self.current_params['tr_max_normal_contact'], ['ncmx']
 
     def normal_force_min_contact_constraint(self):
         ''' maximum applied normal force at contact constraint '''
         Nm = self.current_params['Nmin_contact']
         aiq = np.array([-1., 0., 0.])
         biq = -Nm
-        return aiq, biq, self.current_params['tr_min_normal_contact']
+        return aiq, biq, self.current_params['tr_min_normal_contact'], ['ncmn']
 
     def normal_force_min_external_constraint(self):
         ''' normal force at external contact must be above 0 '''
         aiq = np.dot(np.array([0., 1., 0.]), self.R2C)
         biq = 0.
-        return aiq, biq, self.current_params['tr_min_normal_external']
+        return aiq, biq, self.current_params['tr_min_normal_external'], ['nemn']
 
     def friction_right_external_constraint(self):
         ''' right (i.e., positive) boundary of friction cone '''
@@ -681,7 +684,7 @@ class ModularBarrierController(object):
             biq = 0.0
             # print 'using default friction'
 
-        return aiq, biq, self.current_params['tr_friction_external']
+        return aiq, biq, self.current_params['tr_friction_external'], ['fer']*len(biq)
 
     def friction_left_external_constraint(self):
         ''' left (i.e., negative) boundary of friction cone '''
@@ -700,4 +703,4 @@ class ModularBarrierController(object):
             biq = 0.0
             # print 'using default friction'
 
-        return aiq, biq, self.current_params['tr_friction_external']
+        return aiq, biq, self.current_params['tr_friction_external'], ['fel']*len(biq)
