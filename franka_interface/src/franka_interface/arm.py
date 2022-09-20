@@ -38,6 +38,7 @@ import quaternion
 import numpy as np
 from copy import deepcopy
 from rospy_message_converter import message_converter
+import time
 
 from franka_core_msgs.msg import JointCommand, RobotState, EndPointState, CartImpedanceStiffness, JointImpedanceStiffness, TorqueCmd, JICmd
 from sensor_msgs.msg import JointState
@@ -324,8 +325,20 @@ class ArmInterface(object):
 
         self._gravity = np.asarray(msg.gravity)
         self._coriolis = np.asarray(msg.coriolis)
+        self._mass_matrix = np.asarray(msg.mass_matrix).reshape(7,7,order = 'F')  # added by Neel and Orion (12/15/21)
 
         self._errors = message_converter.convert_ros_message_to_dictionary(msg.current_errors)
+
+    # added by Neel and Orion (12/15/21)
+    def mass_matrix(self):
+        """
+        Return 7x7 joint space mass matrix. Useful for setting damping during 
+        impedance control (among other things)
+
+        :rtype: np.ndarray
+        :return: 7x7 positive (semi?) definite matrix 
+        """
+        return self._mass_matrix
 
     def coriolis_comp(self):
         """
@@ -923,19 +936,85 @@ class ArmInterface(object):
         rospy.sleep(0.5)
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
-    def set_cart_impedance_pose(self, pose, stiffness=None):
-        if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller: 
+    def initialize_cartesian_impedance_mode(self):
+        if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller:
+            print("Switching controller")
             self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
 
+    def set_cart_imepedance_stiffness_only(self,stiffness=None, damping=None):
+        impedance_gains = CartImpedanceStiffness()
+
         if stiffness is not None:
-            stiffness_gains = CartImpedanceStiffness()
-            stiffness_gains.x = stiffness[0]
-            stiffness_gains.y = stiffness[1]
-            stiffness_gains.z = stiffness[2]
-            stiffness_gains.xrot = stiffness[3]
-            stiffness_gains.yrot = stiffness[4]
-            stiffness_gains.zrot = stiffness[5]
-            self._cartesian_stiffness_publisher.publish(stiffness_gains)
+            impedance_gains.x = stiffness[0]
+            impedance_gains.y = stiffness[1]
+            impedance_gains.z = stiffness[2]
+            impedance_gains.xrot = stiffness[3]
+            impedance_gains.yrot = stiffness[4]
+            impedance_gains.zrot = stiffness[5]
+
+        if damping is not None:
+            impedance_gains.bx = damping[0]
+            impedance_gains.by = damping[1]
+            impedance_gains.bz = damping[2]
+            impedance_gains.bxrot = damping[3]
+            impedance_gains.byrot = damping[4]
+            impedance_gains.bzrot = damping[5]
+        else:
+            impedance_gains.bx = -1.0
+            impedance_gains.by = -1.0
+            impedance_gains.bz = -1.0
+            impedance_gains.bxrot = -1.0
+            impedance_gains.byrot = -1.0
+            impedance_gains.bzrot = -1.0
+
+        self._cartesian_stiffness_publisher.publish(impedance_gains)
+
+    def set_cart_impedance_pose_only(self, pose):
+        marker_pose = PoseStamped()
+        marker_pose.pose.position.x = pose['position'][0]
+        marker_pose.pose.position.y = pose['position'][1]
+        marker_pose.pose.position.z = pose['position'][2]
+        marker_pose.pose.orientation.x = pose['orientation'].x
+        marker_pose.pose.orientation.y = pose['orientation'].y
+        marker_pose.pose.orientation.z = pose['orientation'].z
+        marker_pose.pose.orientation.w = pose['orientation'].w
+        self._cartesian_impedance_pose_publisher.publish(marker_pose)
+        
+    def set_cart_impedance_pose(self, pose, stiffness=None, damping=None):
+
+        # t0 = time.time()
+        # if self._ctrl_manager.current_controller != self._ctrl_manager.cartesian_impedance_controller:
+        #     print("Switching controller")
+        #     self.switchToController(self._ctrl_manager.cartesian_impedance_controller)
+        # print("Control Switch Time: ", 1./(time.time() - t0))
+
+        # adding ability to set damping (Neel and Orion 12/15/21)
+        impedance_gains = CartImpedanceStiffness()
+
+        if stiffness is not None:
+            impedance_gains.x = stiffness[0]
+            impedance_gains.y = stiffness[1]
+            impedance_gains.z = stiffness[2]
+            impedance_gains.xrot = stiffness[3]
+            impedance_gains.yrot = stiffness[4]
+            impedance_gains.zrot = stiffness[5]
+
+        if damping is not None:
+            impedance_gains.bx = damping[0]
+            impedance_gains.by = damping[1]
+            impedance_gains.bz = damping[2]
+            impedance_gains.bxrot = damping[3]
+            impedance_gains.byrot = damping[4]
+            impedance_gains.bzrot = damping[5]
+        else:
+            impedance_gains.bx = -1.0
+            impedance_gains.by = -1.0
+            impedance_gains.bz = -1.0
+            impedance_gains.bxrot = -1.0
+            impedance_gains.byrot = -1.0
+            impedance_gains.bzrot = -1.0
+
+        self._cartesian_stiffness_publisher.publish(impedance_gains)
 
         marker_pose = PoseStamped()
         marker_pose.pose.position.x = pose['position'][0]
@@ -947,10 +1026,14 @@ class ArmInterface(object):
         marker_pose.pose.orientation.w = pose['orientation'].w
         self._cartesian_impedance_pose_publisher.publish(marker_pose)
 
+        # Orion Note:
+        # I commented out the following lines because it resulted in this function
+        # stalling for a very long time when called, which is probably bad for the higher level contoller
+        
         # Do not return until motion complete
-        rospy.sleep(0.1)
-        while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
-            rospy.sleep(0.1)
+        # rospy.sleep(0.1)
+        # while sum(map(abs, self.convertToList(self.joint_velocities()))) > 1e-2:
+        #     rospy.sleep(0.1)
 
 
     def set_joint_impedance_config(self, q, stiffness=None):

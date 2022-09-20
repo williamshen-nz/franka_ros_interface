@@ -2,6 +2,7 @@
 // Use of this source code is governed by the Apache-2.0 license, see LICENSE
 #include <franka_ros_controllers/cartesian_impedance_controller.h>
 
+#include <iostream>
 #include <cmath>
 #include <memory>
 
@@ -233,12 +234,33 @@ void CartesianImpedanceController::stiffnessParamCallback(
   cartesian_stiffness_target_(3,3) = msg.xrot;
   cartesian_stiffness_target_(4,4) = msg.yrot;
   cartesian_stiffness_target_(5,5) = msg.zrot;
-  cartesian_damping_target_(0,0) = 2.0 * sqrt(msg.x);
-  cartesian_damping_target_(1,1) = 2.0 * sqrt(msg.y);
-  cartesian_damping_target_(2,2) = 2.0 * sqrt(msg.z);
-  cartesian_damping_target_(3,3) = 2.0 * sqrt(msg.xrot);
-  cartesian_damping_target_(4,4) = 2.0 * sqrt(msg.yrot);
-  cartesian_damping_target_(5,5) = 2.0 * sqrt(msg.zrot);
+
+  // Updated by Orion and Neel to reduce damping (12/13/21)
+  if(msg.bx == -1.)
+  {
+    cartesian_damping_target_(0,0) = .5 * sqrt(msg.x);
+    cartesian_damping_target_(1,1) = .5 * sqrt(msg.y);
+    cartesian_damping_target_(2,2) = .5 * sqrt(msg.z);
+    cartesian_damping_target_(3,3) = .5 * sqrt(msg.xrot);
+    cartesian_damping_target_(4,4) = .5 * sqrt(msg.yrot);
+    cartesian_damping_target_(5,5) = .5 * sqrt(msg.zrot);  
+    // cartesian_damping_target_(0,0) = 2.0 * sqrt(msg.x);
+    // cartesian_damping_target_(1,1) = 2.0 * sqrt(msg.y);
+    // cartesian_damping_target_(2,2) = 2.0 * sqrt(msg.z);
+    // cartesian_damping_target_(3,3) = 2.0 * sqrt(msg.xrot);
+    // cartesian_damping_target_(4,4) = 2.0 * sqrt(msg.yrot);
+    // cartesian_damping_target_(5,5) = 2.0 * sqrt(msg.zrot);
+  }
+  else
+  {
+    cartesian_damping_target_(0,0) = msg.bx;
+    cartesian_damping_target_(1,1) = msg.by;
+    cartesian_damping_target_(2,2) = msg.bz;
+    cartesian_damping_target_(3,3) = msg.bxrot;
+    cartesian_damping_target_(4,4) = msg.byrot;
+    cartesian_damping_target_(5,5) = msg.bzrot;
+  }
+
 }
 
 void CartesianImpedanceController::equilibriumPoseCallback(
