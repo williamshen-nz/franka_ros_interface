@@ -1,4 +1,6 @@
 # This contains stiffness and damping (Neel + Orion, 12/15/21) parameters for cartesian impedance controller
+int32 use_flag
+
 float64 x
 float64 y
 float64 z
@@ -12,3 +14,39 @@ float64 bxrot
 float64 byrot
 float64 bzrot
 
+float64 xx
+float64 xy
+float64 xz
+float64 yx
+float64 yy
+float64 yz
+float64 zx
+float64 zy
+float64 zz
+float64 xxrot
+float64 xyrot 
+float64 xzrot
+float64 yxrot
+float64 yyrot 
+float64 yzrot
+float64 zxrot
+float64 zyrot 
+float64 zzrot
+float64 bxx
+float64 bxy
+float64 bxz
+float64 byx
+float64 byy
+float64 byz
+float64 bzx
+float64 bzy
+float64 bzz
+float64 bxxrot
+float64 bxyrot
+float64 bxzrot
+float64 byxrot
+float64 byyrot
+float64 byzrot
+float64 bzxrot
+float64 bzyrot
+float64 bzzrot

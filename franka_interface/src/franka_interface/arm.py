@@ -944,6 +944,8 @@ class ArmInterface(object):
     def set_cart_imepedance_stiffness_only(self,stiffness=None, damping=None):
         impedance_gains = CartImpedanceStiffness()
 
+        impedance_gains.use_flag = 0
+
         if stiffness is not None:
             impedance_gains.x = stiffness[0]
             impedance_gains.y = stiffness[1]
@@ -968,6 +970,58 @@ class ArmInterface(object):
             impedance_gains.bzrot = -1.0
 
         self._cartesian_stiffness_publisher.publish(impedance_gains)
+
+    def set_cart_imepedance_stiffness_matrix(self,stiffness_trans=None, stiffness_rot=None, 
+                                                  damping_trans=None,   damping_rot=None):
+        
+        
+        if stiffness_trans is not None and stiffness_rot is not None and damping_trans is not None and damping_rot is not None:
+            
+            impedance_gains = CartImpedanceStiffness()
+
+            impedance_gains.use_flag = 1
+
+            impedance_gains.xx = stiffness_trans[0][0]
+            impedance_gains.xy = stiffness_trans[0][1]
+            impedance_gains.xz = stiffness_trans[0][2]
+            impedance_gains.yx = stiffness_trans[1][0]
+            impedance_gains.yy = stiffness_trans[1][1]
+            impedance_gains.yz = stiffness_trans[1][2]
+            impedance_gains.zx = stiffness_trans[2][0]
+            impedance_gains.zy = stiffness_trans[2][1]
+            impedance_gains.zz = stiffness_trans[2][2]
+
+            impedance_gains.xxrot = stiffness_rot[0][0] 
+            impedance_gains.xyrot = stiffness_rot[0][1]
+            impedance_gains.xzrot = stiffness_rot[0][2]
+            impedance_gains.yxrot = stiffness_rot[1][0]
+            impedance_gains.yyrot = stiffness_rot[1][1]
+            impedance_gains.yzrot = stiffness_rot[1][2]
+            impedance_gains.zxrot = stiffness_rot[2][0]
+            impedance_gains.zyrot = stiffness_rot[2][1]
+            impedance_gains.zzrot = stiffness_rot[2][2]
+            
+            impedance_gains.bxx = damping_trans[0][0]
+            impedance_gains.bxy = damping_trans[0][1]
+            impedance_gains.bxz = damping_trans[0][2]
+            impedance_gains.byx = damping_trans[1][0]
+            impedance_gains.byy = damping_trans[1][1]
+            impedance_gains.byz = damping_trans[1][2]
+            impedance_gains.bzx = damping_trans[2][0]
+            impedance_gains.bzy = damping_trans[2][1]
+            impedance_gains.bzz = damping_trans[2][2]
+            
+            impedance_gains.bxxrot = damping_rot[0][0]
+            impedance_gains.bxyrot = damping_rot[0][1]
+            impedance_gains.bxzrot = damping_rot[0][2]
+            impedance_gains.byxrot = damping_rot[1][0]
+            impedance_gains.byyrot = damping_rot[1][1]
+            impedance_gains.byzrot = damping_rot[1][2]
+            impedance_gains.bzxrot = damping_rot[2][0]
+            impedance_gains.bzyrot = damping_rot[2][1]
+            impedance_gains.bzzrot = damping_rot[2][2]
+
+            self._cartesian_stiffness_publisher.publish(impedance_gains)
 
     def set_cart_impedance_pose_only(self, pose):
         marker_pose = PoseStamped()

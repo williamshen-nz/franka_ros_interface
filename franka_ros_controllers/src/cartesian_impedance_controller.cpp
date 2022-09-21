@@ -228,38 +228,91 @@ void CartesianImpedanceController::stiffnessParamCallback(
   cartesian_damping_target_.setIdentity(); // Damping ratio = 1
   //nullspace_stiffness_target_ = config.nullspace_stiffness; TODO
 
-  cartesian_stiffness_target_(0,0) = msg.x;
-  cartesian_stiffness_target_(1,1) = msg.y;
-  cartesian_stiffness_target_(2,2) = msg.z;
-  cartesian_stiffness_target_(3,3) = msg.xrot;
-  cartesian_stiffness_target_(4,4) = msg.yrot;
-  cartesian_stiffness_target_(5,5) = msg.zrot;
 
-  // Updated by Orion and Neel to reduce damping (12/13/21)
-  if(msg.bx == -1.)
+  if(msg.use_flag == 0)
   {
-    cartesian_damping_target_(0,0) = .5 * sqrt(msg.x);
-    cartesian_damping_target_(1,1) = .5 * sqrt(msg.y);
-    cartesian_damping_target_(2,2) = .5 * sqrt(msg.z);
-    cartesian_damping_target_(3,3) = .5 * sqrt(msg.xrot);
-    cartesian_damping_target_(4,4) = .5 * sqrt(msg.yrot);
-    cartesian_damping_target_(5,5) = .5 * sqrt(msg.zrot);  
-    // cartesian_damping_target_(0,0) = 2.0 * sqrt(msg.x);
-    // cartesian_damping_target_(1,1) = 2.0 * sqrt(msg.y);
-    // cartesian_damping_target_(2,2) = 2.0 * sqrt(msg.z);
-    // cartesian_damping_target_(3,3) = 2.0 * sqrt(msg.xrot);
-    // cartesian_damping_target_(4,4) = 2.0 * sqrt(msg.yrot);
-    // cartesian_damping_target_(5,5) = 2.0 * sqrt(msg.zrot);
+
+    cartesian_stiffness_target_(0,0) = msg.x;
+    cartesian_stiffness_target_(1,1) = msg.y;
+    cartesian_stiffness_target_(2,2) = msg.z;
+    cartesian_stiffness_target_(3,3) = msg.xrot;
+    cartesian_stiffness_target_(4,4) = msg.yrot;
+    cartesian_stiffness_target_(5,5) = msg.zrot;
+    // Updated by Orion and Neel to reduce damping (12/13/21)
+    if(msg.bx == -1.)
+    {
+   
+      cartesian_damping_target_(0,0) = .5 * sqrt(msg.x);
+      cartesian_damping_target_(1,1) = .5 * sqrt(msg.y);
+      cartesian_damping_target_(2,2) = .5 * sqrt(msg.z);
+      cartesian_damping_target_(3,3) = .5 * sqrt(msg.xrot);
+      cartesian_damping_target_(4,4) = .5 * sqrt(msg.yrot);
+      cartesian_damping_target_(5,5) = .5 * sqrt(msg.zrot);  
+      // cartesian_damping_target_(0,0) = 2.0 * sqrt(msg.x);
+      // cartesian_damping_target_(1,1) = 2.0 * sqrt(msg.y);
+      // cartesian_damping_target_(2,2) = 2.0 * sqrt(msg.z);
+      // cartesian_damping_target_(3,3) = 2.0 * sqrt(msg.xrot);
+      // cartesian_damping_target_(4,4) = 2.0 * sqrt(msg.yrot);
+      // cartesian_damping_target_(5,5) = 2.0 * sqrt(msg.zrot);
+    }
+    else
+    {
+      cartesian_damping_target_(0,0) = msg.bx;
+      cartesian_damping_target_(1,1) = msg.by;
+      cartesian_damping_target_(2,2) = msg.bz;
+      cartesian_damping_target_(3,3) = msg.bxrot;
+      cartesian_damping_target_(4,4) = msg.byrot;
+      cartesian_damping_target_(5,5) = msg.bzrot;
+    }
+
   }
   else
   {
-    cartesian_damping_target_(0,0) = msg.bx;
-    cartesian_damping_target_(1,1) = msg.by;
-    cartesian_damping_target_(2,2) = msg.bz;
-    cartesian_damping_target_(3,3) = msg.bxrot;
-    cartesian_damping_target_(4,4) = msg.byrot;
-    cartesian_damping_target_(5,5) = msg.bzrot;
+
+    cartesian_stiffness_target_(0,0) = msg.xx;
+    cartesian_stiffness_target_(0,1) = msg.xy;
+    cartesian_stiffness_target_(0,2) = msg.xz;
+    cartesian_stiffness_target_(1,0) = msg.yx;
+    cartesian_stiffness_target_(1,1) = msg.yy;
+    cartesian_stiffness_target_(1,2) = msg.yz;
+    cartesian_stiffness_target_(2,0) = msg.zx;
+    cartesian_stiffness_target_(2,1) = msg.zy;
+    cartesian_stiffness_target_(2,2) = msg.zz;
+    cartesian_stiffness_target_(3,3) = msg.xxrot;
+    cartesian_stiffness_target_(3,4) = msg.xyrot;
+    cartesian_stiffness_target_(3,5) = msg.xzrot;
+    cartesian_stiffness_target_(4,3) = msg.yxrot;
+    cartesian_stiffness_target_(4,4) = msg.yyrot;
+    cartesian_stiffness_target_(4,5) = msg.yzrot;
+    cartesian_stiffness_target_(5,3) = msg.zxrot;
+    cartesian_stiffness_target_(5,4) = msg.zyrot;
+    cartesian_stiffness_target_(5,5) = msg.zzrot;
+
+    cartesian_damping_target_(0,0) = msg.bxx;
+    cartesian_damping_target_(0,1) = msg.bxy;
+    cartesian_damping_target_(0,2) = msg.bxz;
+    cartesian_damping_target_(1,0) = msg.byx;
+    cartesian_damping_target_(1,1) = msg.byy;
+    cartesian_damping_target_(1,2) = msg.byz;
+    cartesian_damping_target_(2,0) = msg.bzx;
+    cartesian_damping_target_(2,1) = msg.bzy;
+    cartesian_damping_target_(2,2) = msg.bzz;
+    cartesian_damping_target_(3,3) = msg.bxxrot;
+    cartesian_damping_target_(3,4) = msg.bxyrot;
+    cartesian_damping_target_(3,5) = msg.bxzrot;
+    cartesian_damping_target_(4,3) = msg.byxrot;
+    cartesian_damping_target_(4,4) = msg.byyrot;
+    cartesian_damping_target_(4,5) = msg.byzrot;
+    cartesian_damping_target_(5,3) = msg.bzxrot;
+    cartesian_damping_target_(5,4) = msg.bzyrot;
+    cartesian_damping_target_(5,5) = msg.bzzrot;
+
+
   }
+
+
+
+
 
 }
 
