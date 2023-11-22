@@ -589,6 +589,9 @@ class ArmInterface(object):
             rospy.logwarn("ArmInterface: Setting speed above 0.3 could be risky!! Be extremely careful.")
         self._speed_ratio = speed
 
+    def joint_position_speed(self) -> float:
+        return self._speed_ratio
+
     def set_joint_positions(self, positions):
         """
         Commands the joints of this limb to the specified positions.
@@ -688,7 +691,7 @@ class ArmInterface(object):
         return joint_diff
 
     def move_to_joint_positions(self, positions, timeout=2.0,
-                                threshold=0.00085, test=None):
+                                threshold=0.005, test=None, min_traj_dur=0.75):
         """
         (Blocking) Commands the limb to the provided positions.
         Waits until the reported joint state matches that specified.
@@ -710,7 +713,6 @@ class ArmInterface(object):
         if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller:
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
 
-        min_traj_dur = 0.5
         traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
         traj_client.clear()
 
@@ -740,8 +742,11 @@ class ArmInterface(object):
             timeout=max(duration, timeout),
             timeout_msg=fail_msg,
             rate=100,
-            raise_on_error=False
-            )
+            raise_on_error=True
+        )
+
+        if test_collision():
+            raise RuntimeError(fail_msg)
 
         res = traj_client.result()
         if res is not None and res.error_code:
@@ -750,8 +755,49 @@ class ArmInterface(object):
         rospy.sleep(0.5)
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
+    def move_to_joint_positions_async(self, positions, timeout=2.0,
+                                threshold=0.005, test=None, min_traj_dur=0.05, vel=0.0075):
+        """
+        (Blocking) Commands the limb to the provided positions.
+        Waits until the reported joint state matches that specified.
+
+        This function uses a low-pass filter using JointTrajectoryService
+        to smooth the movement or optionally uses MoveIt! to plan and
+        execute a trajectory.
+
+        :type positions: dict({str:float})
+        :param positions: joint_name:angle command
+        :type timeout: float
+        :param timeout: seconds to wait for move to finish [15]
+        :type threshold: float
+        :param threshold: position threshold in radians across each joint when
+         move is considered successful [0.00085]
+        :param test: optional function returning True if motion must be aborted
+        """
+
+        if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller:
+            self.switchToController(self._ctrl_manager.joint_trajectory_controller)
+
+        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
+        traj_client.clear()
+
+        dur = []
+        for j in range(len(self._joint_names)):
+            dur.append(max(abs(positions[self._joint_names[j]] - self._joint_angle[self._joint_names[j]]) / self._joint_limits.velocity[j], min_traj_dur))
+        duration = max(dur)/self._speed_ratio
+        print('[move_to_joint_positions]: duration:', duration)
+
+        velocities = [vel for n in self._joint_names]
+
+        traj_client.add_point(positions = [positions[n] for n in self._joint_names], time=duration, velocities=velocities)
+
+        diffs = [self.genf(j, a) for j, a in positions.items() if j in self._joint_angle]
+
+        traj_client.start() # send the trajectory action request
+    
+
     def execute_position_path(self, position_path, timeout=5.0,
-                                threshold=0.00085, test=None):
+                                threshold=0.005, test=None, min_traj_dur=0.75):
         """
         (Blocking) Commands the limb to the provided positions.
         Waits until the reported joint state matches that specified.
@@ -766,6 +812,7 @@ class ArmInterface(object):
         move is considered successful [0.008726646]
         @param test: optional function returning True if motion must be aborted
         """
+        print('[ExecutePositionPath] min_traj_dur =', min_traj_dur)
 
         current_q = self.joint_angles()
         diff_from_start = sum([abs(a-current_q[j]) for j, a in position_path[0].items()])
@@ -778,7 +825,6 @@ class ArmInterface(object):
         if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller:
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
 
-        min_traj_dur = 1.0
         traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
         traj_client.clear()
 
@@ -788,17 +834,23 @@ class ArmInterface(object):
         # Start at the second waypoint because robot is already at first waypoint
         print('[ExecutePositionPath] Trajectory length:', len(position_path))
         print('[ExecutePositionPath] Speed ratio:', self._speed_ratio)
+        prev_joint_angle = self._joint_angle
         for i in range(1, len(position_path)):
             q = position_path[i]
             dur = []
             for j in range(len(self._joint_names)):
-                dur.append(max(abs(q[self._joint_names[j]] - self._joint_angle[self._joint_names[j]]) / self._joint_limits.velocity[j], min_traj_dur))
-            interval = max(dur)/self._speed_ratio
+                dur.append(abs(q[self._joint_names[j]] - prev_joint_angle[self._joint_names[j]]) / self._joint_limits.velocity[j])
+            print(i, dur)
+            max_dur = max(max(dur), min_traj_dur)
+            print('max dur:', max_dur)
+            interval = max_dur/self._speed_ratio
+            print(interval)
             interval_lengths.append(interval)
 
             time_so_far += interval
             total_times.append(time_so_far)
-        #print('[ExecutePositionPath] Interval Lengths:', interval_lengths)
+            prev_joint_angle = q
+        print('[ExecutePositionPath] Interval Lengths:', interval_lengths)
         for i in range(1, len(position_path)):
             q_t = position_path[i]
             positions = [q_t[n] for n in self._joint_names]
@@ -838,10 +890,14 @@ class ArmInterface(object):
             raise_on_error=False
             )
         #print('Arm Diff:', [diff() for diff in diffs])
+
+        if test_collision():
+            raise RuntimeError(fail_msg)
+
         rospy.sleep(0.5)
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
-    def move_to_touch(self, positions, timeout=3.0, threshold=0.00085):
+    def move_to_touch(self, positions, timeout=3.0, threshold=0.005, min_traj_dur = 0.75):
         """
         (Blocking) Commands the limb to the provided positions.
 
@@ -861,11 +917,10 @@ class ArmInterface(object):
         if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller:
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
 
-        min_traj_dur = 0.5
         traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
         traj_client.clear()
 
-        speed_ratio = 0.1 # Move slower when approaching contact
+        speed_ratio = self._speed_ratio # Should move slower when approaching contact... Default is
         dur = []
         for j in range(len(self._joint_names)):
             dur.append(max(abs(positions[self._joint_names[j]] - self._joint_angle[self._joint_names[j]]) / self._joint_limits.velocity[j], min_traj_dur))
@@ -909,7 +964,8 @@ class ArmInterface(object):
         pub.publish(franka_msgs.msg.ErrorRecoveryActionGoal())
         rospy.loginfo("Collision Reflex was reset")
 
-    def move_from_touch(self, positions, timeout=1.5, threshold=0.00085):
+
+    def move_from_touch(self, positions, timeout=1.5, threshold=0.005):
         """
         (Blocking) Commands the limb to the provided positions.
 
@@ -932,7 +988,7 @@ class ArmInterface(object):
         print('[move_from_touch] Desired end config')
         #print(positions)
         speed_ratio = 0.3
-        min_traj_dur = 0.5
+        min_traj_dur = 0.75
         traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
         traj_client.clear()
 
