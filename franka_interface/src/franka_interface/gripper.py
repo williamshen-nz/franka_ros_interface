@@ -341,7 +341,7 @@ class GripperInterface(object):
         goal = MoveGoal()
         if not speed:
             speed = self._gripper_speed
-        print("GRIPPER SPEED:", speed)
+        # print("GRIPPER SPEED:", speed)
 
         goal.width = width
         goal.speed = speed
@@ -400,7 +400,7 @@ class GripperInterface(object):
 
         if not speed:
             speed = self._gripper_speed
-        print("GRIPPER SPEED:", speed)
+        # print("GRIPPER SPEED:", speed)
 
         goal = GraspGoal()
         goal.width = width

@@ -671,7 +671,7 @@ class ArmInterface(object):
             self._ctrl_manager.load_controller(controller_name)
         self._ctrl_manager.start_controller(controller_name)
 
-    def move_to_neutral(self, timeout=15.0, speed=0.15):
+    def move_to_neutral(self, timeout=15.0, speed=None):
         """
         Command the Limb joints to a predefined set of "neutral" joint angles.
         From rosparam /franka_control/neutral_pose.
@@ -682,7 +682,8 @@ class ArmInterface(object):
         :param speed: ratio of maximum joint speed for execution
          default= 0.15; range= [0.0-1.0]
         """
-        self.set_joint_position_speed(speed)
+        if speed is not None:
+            self.set_joint_position_speed(speed)
         self.move_to_joint_positions(self._neutral_pose_joints, timeout)
 
     def genf(self, joint, angle):
@@ -755,8 +756,7 @@ class ArmInterface(object):
         rospy.sleep(0.5)
         rospy.loginfo("ArmInterface: Trajectory controlling complete")
 
-    def move_to_joint_positions_async(self, positions, timeout=2.0,
-                                threshold=0.005, test=None, min_traj_dur=0.05, vel=0.0075):
+    def move_to_joint_positions_async(self, positions, min_traj_dur=0.15, vel=0.0075):
         """
         (Blocking) Commands the limb to the provided positions.
         Waits until the reported joint state matches that specified.
@@ -767,12 +767,6 @@ class ArmInterface(object):
 
         :type positions: dict({str:float})
         :param positions: joint_name:angle command
-        :type timeout: float
-        :param timeout: seconds to wait for move to finish [15]
-        :type threshold: float
-        :param threshold: position threshold in radians across each joint when
-         move is considered successful [0.00085]
-        :param test: optional function returning True if motion must be aborted
         """
 
         if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller:
@@ -785,7 +779,7 @@ class ArmInterface(object):
         for j in range(len(self._joint_names)):
             dur.append(max(abs(positions[self._joint_names[j]] - self._joint_angle[self._joint_names[j]]) / self._joint_limits.velocity[j], min_traj_dur))
         duration = max(dur)/self._speed_ratio
-        print('[move_to_joint_positions]: duration:', duration)
+        # print('[move_to_joint_positions]: duration:', duration)
 
         velocities = [vel for n in self._joint_names]
 
