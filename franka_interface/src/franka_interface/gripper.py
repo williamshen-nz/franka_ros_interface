@@ -289,7 +289,7 @@ class GripperInterface(object):
 
         return True
 
-    def open(self):
+    def open(self, wait_for_result: bool = True):
         """
         Open gripper to max possible width.
 
@@ -297,9 +297,9 @@ class GripperInterface(object):
         :rtype: bool
         """
         self._caller = "open gripper"
-        return self.move_joints(0.2)
+        return self.move_joints(0.2, wait_for_result=wait_for_result)
 
-    def close(self):
+    def close(self, wait_for_result: bool = True):
         """
         close gripper to till collision is detected.
         Note: This is not exactly doing what it should. The behaviour is 
@@ -315,7 +315,7 @@ class GripperInterface(object):
             if not result.success:
                 self.stop_action()
         self._caller = "close gripper"
-        return self.grasp(0.001, 0.1, cb = cb)
+        return self.grasp(0.001, 0.1, cb = cb, wait_for_result=wait_for_result)
 
     def calibrate(self):
         return self.home_joints(wait_for_result = True)
