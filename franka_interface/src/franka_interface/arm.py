@@ -238,6 +238,9 @@ class ArmInterface(object):
 
         self.set_joint_position_speed(self._speed_ratio)
 
+        # traj_client, only used in async method right now
+        self._traj_client = JointTrajectoryActionClient(joint_names=self.joint_names())
+
     def convertToDict(self, q):
         q_dict = dict()
         for i in range(len(q)):
@@ -768,12 +771,9 @@ class ArmInterface(object):
         :type positions: dict({str:float})
         :param positions: joint_name:angle command
         """
-
+        # Note: this takes 0.01-0.03s to check, so it's a bit slow
         if self._ctrl_manager.current_controller != self._ctrl_manager.joint_trajectory_controller:
             self.switchToController(self._ctrl_manager.joint_trajectory_controller)
-
-        traj_client = JointTrajectoryActionClient(joint_names = self.joint_names())
-        traj_client.clear()
 
         dur = []
         for j in range(len(self._joint_names)):
@@ -781,14 +781,12 @@ class ArmInterface(object):
         duration = max(dur)/self._speed_ratio
         # print('[move_to_joint_positions]: duration:', duration)
 
-        velocities = [vel for n in self._joint_names]
+        velocities = [vel] * len(self._joint_names)
 
-        traj_client.add_point(positions = [positions[n] for n in self._joint_names], time=duration, velocities=velocities)
+        self._traj_client.clear()
+        self._traj_client.add_point(positions = [positions[n] for n in self._joint_names], time=duration, velocities=velocities)
+        self._traj_client.start()  # send the trajectory action request
 
-        diffs = [self.genf(j, a) for j, a in positions.items() if j in self._joint_angle]
-
-        traj_client.start() # send the trajectory action request
-    
 
     def execute_position_path(self, position_path, timeout=5.0,
                                 threshold=0.005, test=None, min_traj_dur=0.75):
