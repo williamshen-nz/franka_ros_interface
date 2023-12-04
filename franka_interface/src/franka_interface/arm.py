@@ -783,6 +783,7 @@ class ArmInterface(object):
 
         velocities = [vel] * len(self._joint_names)
 
+        # We use same traj client as the control manager slows down otherwise
         self._traj_client.clear()
         self._traj_client.add_point(positions = [positions[n] for n in self._joint_names], time=duration, velocities=velocities)
         self._traj_client.start()  # send the trajectory action request
